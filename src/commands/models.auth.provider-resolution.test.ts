@@ -13,7 +13,7 @@ import {
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { summarizeMigrationItems } from "../plugin-sdk/migration.js";
 import * as migrationRuntime from "../plugins/migration-provider-runtime.js";
-import { pluginLoaderCacheState } from "../plugins/registry-lifecycle.js";
+import { getPluginLoaderCacheState } from "../plugins/registry-lifecycle.js";
 import { resetPluginRuntimeStateForTest } from "../plugins/runtime.js";
 import type { MigrationItem, MigrationPlan, ProviderPlugin } from "../plugins/types.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
@@ -270,7 +270,7 @@ describe("models auth login explicit credential selection", () => {
         );
       }
       try {
-        pluginLoaderCacheState.clear();
+        getPluginLoaderCacheState().clear();
         resetPluginRuntimeStateForTest();
         const provider = "authstore-proof";
         const freshId = `${provider}:${selection === "profile-id" ? "selected" : "fresh"}`;
@@ -389,7 +389,7 @@ describe("models auth login explicit credential selection", () => {
         expect(runtime.log).toHaveBeenCalledWith(`Auth profile: ${freshId} (${provider}/token)`);
       } finally {
         importOwner.mockRestore();
-        pluginLoaderCacheState.clear();
+        getPluginLoaderCacheState().clear();
         resetPluginRuntimeStateForTest();
         clearRuntimeAuthProfileStoreSnapshots();
         clearAuthProfileMigrationDiagnostics();

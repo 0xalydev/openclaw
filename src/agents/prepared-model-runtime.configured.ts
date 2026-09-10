@@ -11,6 +11,7 @@ import {
   findNormalizedProviderValue,
   normalizeProviderId,
 } from "@openclaw/model-catalog-core/provider-id";
+import { tryResolveLegacyCompatibilityAgentId } from "../config/legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
 import {
@@ -20,13 +21,28 @@ import {
 import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
 import { resolveAgentEntry } from "./agent-scope-config.js";
 import {
+  listAgentIds,
+  resolveAgentDir,
+  resolveSubagentSpawnModelFallbacksOverride,
+  resolveAgentWorkspaceDir,
+} from "./agent-scope.js";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
+import {
   buildInlineProviderModels,
   completeInlineProviderModel,
   type InlineModelEntry,
 } from "./embedded-agent-runner/model.inline-provider.js";
 import type { StaticModelIdMatcher } from "./embedded-agent-runner/model.static-id.js";
 import { resolveConfiguredModelHarnessRuntime } from "./harness-runtimes.js";
+import { resolveLegacyInheritedAuthDir } from "./legacy-inherited-auth-dir.js";
 import type { ModelCatalogEntry } from "./model-catalog.types.js";
+import { resolveModelCandidateChain } from "./model-fallback-candidates.js";
+import {
+  resolveDefaultModelForAgent,
+  resolveSubagentConfiguredModelSelection,
+} from "./model-selection-config.js";
+import { resolveConfiguredModelFallbacks } from "./model-selection-resolve.js";
+import type { PreparedModelRuntimeInput } from "./prepared-model-runtime.types.js";
 import type { AuthStorageData } from "./sessions/auth-storage.js";
 import { resolveEffectiveAgentRuntime } from "./thinking-runtime.js";
 
@@ -292,4 +308,64 @@ function findPreparedProviderStaticCatalogModel(params: {
     }
   }
   return undefined;
+}
+
+export function listConfiguredOwnerInputs(
+  config: OpenClawConfig,
+  defaultWorkspaceDir?: string,
+  allowGatewaySubagentBinding?: boolean,
+): PreparedModelRuntimeInput[] {
+  const compatibilityAgentId = tryResolveLegacyCompatibilityAgentId(config);
+  const inheritedAuthDir = resolveLegacyInheritedAuthDir(config);
+  return listAgentIds(config).map((agentId) => {
+    const preserveWorkspaceDirOnRefresh = agentId === compatibilityAgentId && defaultWorkspaceDir;
+    const input: PreparedModelRuntimeInput = {
+      agentId,
+      agentDir: resolveAgentDir(config, agentId),
+      config,
+      inheritedAuthDir,
+      workspaceDir: preserveWorkspaceDirOnRefresh
+        ? defaultWorkspaceDir
+        : resolveAgentWorkspaceDir(config, agentId),
+      runtimePluginSelections: resolveConfiguredRuntimePluginSelections(config, agentId),
+    };
+    if (allowGatewaySubagentBinding === true) {
+      input.allowGatewaySubagentBinding = true;
+    }
+    if (preserveWorkspaceDirOnRefresh) {
+      input.preserveWorkspaceDirOnRefresh = true;
+    }
+    return input;
+  });
+}
+
+function resolveConfiguredRuntimePluginSelections(
+  config: OpenClawConfig,
+  agentId: string,
+): PreparedModelRuntimeInput["runtimePluginSelections"] {
+  const configured = resolveDefaultModelForAgent({ cfg: config, agentId });
+  const subagentModel = resolveSubagentConfiguredModelSelection({
+    cfg: config,
+    agentId,
+    includeAgentPrimary: false,
+  });
+  return resolveModelCandidateChain({
+    cfg: config,
+    agentId,
+    manifestPlugins: [],
+    provider: configured.provider || DEFAULT_PROVIDER,
+    model: configured.model || DEFAULT_MODEL,
+    requestedRouteResolution: "resolved",
+    // Session policy can narrow either configured chain after admission waits. Prepare
+    // their owners once so nested execution never expands an already frozen generation.
+    fallbacksOverride: [
+      ...resolveConfiguredModelFallbacks({ cfg: config, agentId }),
+      ...(subagentModel ? [subagentModel] : []),
+      ...(resolveSubagentSpawnModelFallbacksOverride(config, agentId) ?? []),
+    ],
+  }).map((candidate) => ({
+    provider: candidate.provider,
+    modelId: candidate.model,
+    agentId,
+  }));
 }

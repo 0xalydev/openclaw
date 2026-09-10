@@ -18,7 +18,7 @@ import type { ModelRegistry } from "./sessions/model-registry.js";
 
 export type PreparedModelRuntimeCatalogMode = "live" | "static";
 
-export type PreparedModelRuntimeResourceClaim = { release: () => void };
+export type PreparedModelRuntimeResourceClaim = { release: () => Promise<void> };
 
 export type PreparedMediaCapabilityProviderSource = Readonly<{
   registry: PluginRegistry;
@@ -127,7 +127,7 @@ export type PreparedModelRuntimeInput = {
 export type PreparedModelRuntimeLease = Readonly<{
   snapshot: PreparedModelRuntimeSnapshot;
   pluginGeneration: PreparedModelRuntimePluginGeneration;
-  release: () => void;
+  [Symbol.asyncDispose](): Promise<void>;
 }>;
 
 export type PreparedModelRuntimeLeaseOptions = {
@@ -217,7 +217,6 @@ export type PreparedModelRuntimeOwner = {
   refreshError?: Error;
   snapshot?: PreparedModelRuntimeSnapshot;
   pluginGeneration?: PreparedModelRuntimePluginGeneration;
-  resourceClaim?: PreparedModelRuntimeResourceClaim;
   /** Explicit generation admitted for the current publication, when known. */
   pendingPluginGeneration?: PreparedModelRuntimePluginGeneration;
   pending?: Promise<PreparedModelRuntimeSnapshot>;

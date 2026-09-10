@@ -95,13 +95,22 @@ describe("Gateway startup lifetime", () => {
       const secretsModule = await import("../secrets/runtime-state.js");
       const bootstrap = bootstrapModule.prepareGatewayServerBootstrap;
       const retainMetadata = metadataModule.retainGatewayPluginMetadata;
-      const releases: Array<ReturnType<typeof vi.fn<() => void>>> = [];
+      const metadataOwners: Array<{
+        owner: ReturnType<typeof retainMetadata>;
+        released: ReturnType<typeof vi.fn>;
+      }> = [];
       const metadataSpy = vi
         .spyOn(metadataModule, "retainGatewayPluginMetadata")
         .mockImplementation(() => {
-          const release = vi.fn(retainMetadata());
-          releases.push(release);
-          return release;
+          const owner = retainMetadata();
+          const released = vi.fn();
+          const close = owner.close.bind(owner);
+          vi.spyOn(owner, "close").mockImplementation(async (...args) => {
+            await close(...args);
+            released();
+          });
+          metadataOwners.push({ owner, released });
+          return owner;
         });
       const clearSecretsSpy = vi.spyOn(secretsModule, "clearSecretsRuntimeSnapshotState");
       const clearError = new Error("synthetic registered secrets clear failure");
@@ -121,7 +130,7 @@ describe("Gateway startup lifetime", () => {
         .spyOn(bootstrapModule, "prepareGatewayServerBootstrap")
         .mockImplementation(async (...args) => {
           sdkHost = getLegacyPluginSdkResourceHost();
-          const inspection = new PluginRegistryInspectionResources();
+          const inspection = new PluginRegistryInspectionResources(async () => {});
           inspection.attach(createEmptyPluginRegistry());
           inspection.register("startup-provider", {
             id: "native",
@@ -147,8 +156,8 @@ describe("Gateway startup lifetime", () => {
       try {
         await entered.promise;
         expect(database.isOpen).toBe(true);
-        expect(releases).toHaveLength(1);
-        expect(releases[0]).not.toHaveBeenCalled();
+        expect(metadataOwners).toHaveLength(1);
+        expect(metadataOwners[0]?.released).not.toHaveBeenCalled();
         expect(clearSecretsSpy).not.toHaveBeenCalled();
         resume.resolve();
         const failure = await outcome;
@@ -178,7 +187,7 @@ describe("Gateway startup lifetime", () => {
         expect(startupTraceEventLoopDelay.instances[0]?.disable).toHaveBeenCalledOnce();
         expect(database.isOpen).toBe(false);
         expect(clearSecretsSpy).toHaveBeenCalledOnce();
-        expect(releases[0]).toHaveBeenCalledOnce();
+        expect(metadataOwners[0]?.released).toHaveBeenCalledOnce();
       } finally {
         stopClearFailure?.();
         resume.resolve();
@@ -191,8 +200,8 @@ describe("Gateway startup lifetime", () => {
           database.close();
         }
         secretsModule.clearSecretsRuntimeSnapshotState();
-        for (const release of releases) {
-          release();
+        for (const { owner } of metadataOwners) {
+          await owner.close();
         }
         await state.cleanup();
       }

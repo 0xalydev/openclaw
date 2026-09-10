@@ -8,15 +8,15 @@ type PluginModuleCacheVariant = {
 
 export type PluginSourceCacheRecord = {
   modulePath?: string;
+  disposeModule?: () => void;
   variants: Map<string, PluginModuleCacheVariant>;
   validatedBoundaries: Set<string>;
-  boundaryRoot?: string;
   facadeTracked?: true;
   capabilityCatalog?: {
     context: object;
     value: import("./capability-catalog.types.js").PluginCapabilityCatalog;
   };
-  publicSurface?: { exports?: object; pending?: Promise<object> };
+  publicSurface?: { exports: object };
 };
 
 type PluginPublicSurfaceBoundary = { boundaryLabel: string; rejectHardlinks: boolean };
@@ -42,7 +42,6 @@ export function createPluginCacheArtifacts(): {
   moduleLoaders: Map<string, (target: string) => unknown>;
   sources: Map<string, PluginSourceCacheRecord>;
   sourceAliases: Map<string, string>;
-  disposeModules?: () => void;
 } {
   return { moduleLoaders: new Map(), sources: new Map(), sourceAliases: new Map() };
 }
@@ -51,16 +50,8 @@ export function createPluginRootArtifacts(): PluginRootArtifactCache {
   return {
     artifactLoadsInProgress: new Set<string>(),
     artifacts: new Map<string, PluginArtifactLocation | null>(),
-    runtimeArtifacts: new Map<string, { source: string; rootDir: string }>(),
-    entryBoundaries: new Map<
-      string,
-      {
-        importerPath: string;
-        importerDir: string;
-        boundaryRoot: string;
-        packageRoot: string | null;
-      }
-    >(),
-    entryPaths: new Map<string, { path: string } | { error: Error }>(),
+    runtimeArtifacts: new Map(),
+    entryBoundaries: new Map(),
+    entryPaths: new Map(),
   };
 }

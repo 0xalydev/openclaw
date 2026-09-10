@@ -6,11 +6,8 @@ import { resolveAgentEffectiveModelPrimary } from "../agents/agent-scope.js";
 import { areRuntimeModelRefsEquivalent } from "../agents/model-runtime-aliases.js";
 import { resolveModelRuntimePolicy } from "../agents/model-runtime-policy.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import { enablePluginInConfig, enablePluginWithCapabilityConsent } from "../plugins/enable.js";
-import {
-  type ProviderAuthChoiceMetadata,
-  resolveManifestProviderAuthChoices,
-} from "../plugins/provider-auth-choices.js";
+import { enablePluginInConfig } from "../plugins/enable.js";
+import { resolveManifestProviderAuthChoices } from "../plugins/provider-auth-choices.js";
 import { resolveProviderInstallCatalogEntries } from "../plugins/provider-install-catalog.js";
 import { listRecommendedToolInstalls } from "../plugins/recommended-tool-installs.js";
 import {
@@ -219,57 +216,22 @@ export async function detectSetupInference(
       choice.appGuidedDiscovery === true && supportsSetupTextInference(choice.onboardingScopes),
   );
   if (discoveryChoices.length > 0) {
-    const { withPluginLifecycleLease } = await import("../plugins/plugin-lifecycle-lease.js");
-    // Runtime metadata must be resolved with consent under this lease, not reused
-    // from option preparation before awaited CLI probes could permit a replacement.
-    const discovery = await withPluginLifecycleLease({}, async () => {
-      let discoveryConfig = cfg;
-      const enabledChoices: ProviderAuthChoiceMetadata[] = [];
-      for (const choice of discoveryChoices) {
-        // Keep unaccepted choices visible, but do not import their runtime during discovery.
-        const enabled = await enablePluginWithCapabilityConsent(cfg, choice.pluginId, {
-          workspaceDir: workspace,
-        });
-        if (!enabled.enabled) {
-          continue;
-        }
-        discoveryConfig = (deps.enablePluginInConfig ?? enablePluginInConfig)(
-          discoveryConfig,
-          choice.pluginId,
-        ).config;
-        enabledChoices.push(choice);
-      }
-      const providers = enabledChoices.length
-        ? (
-            deps.resolvePluginProviders ??
-            (await import("../plugins/providers.runtime.js")).resolvePluginProvidersCore
-          )({
-            config: discoveryConfig,
-            workspaceDir: workspace,
-            mode: "setup",
-            includeUntrustedWorkspacePlugins: false,
-            onlyPluginIds: [...new Set(enabledChoices.map((choice) => choice.pluginId))],
-          })
-        : [];
-      return { discoveryConfig, enabledChoices, providers };
-    });
-    const discovered = await Promise.all(
-      discovery.enabledChoices.map(async (choice): Promise<SetupInferenceCandidate | null> => {
-        const provider = discovery.providers.find(
-          (candidate) =>
-            candidate.pluginId === choice.pluginId &&
-            normalizeProviderId(candidate.id) === normalizeProviderId(choice.providerId),
-        );
+    const { probeSetupProviderChoices } = await import("../plugins/provider-setup-availability.js");
+    const discovered = await probeSetupProviderChoices(
+      {
+        config: cfg,
+        workspaceDir: workspace,
+        choices: discoveryChoices,
+        enablePluginInConfig: deps.enablePluginInConfig,
+        resolvePluginProviders: deps.resolvePluginProviders,
+      },
+      async (choice, provider, context): Promise<SetupInferenceCandidate | null> => {
         const method = provider?.auth.find((candidate) => candidate.id === choice.methodId);
         if (!method?.appGuidedSetup) {
           return null;
         }
         try {
-          const candidate = await method.appGuidedSetup.detect({
-            config: discovery.discoveryConfig,
-            env: process.env,
-            workspaceDir: workspace,
-          });
+          const candidate = await method.appGuidedSetup.detect(context);
           if (!candidate) {
             return null;
           }
@@ -302,7 +264,7 @@ export async function detectSetupInference(
           );
           return null;
         }
-      }),
+      },
     );
     candidates.push(...discovered.filter((candidate) => candidate !== null));
   }

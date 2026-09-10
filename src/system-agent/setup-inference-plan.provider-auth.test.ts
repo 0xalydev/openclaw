@@ -49,13 +49,15 @@ describe("catalog-only provider preparation", () => {
     },
     { label: "an undetailed skipped install", installError: undefined },
   ])("keeps $label in the terminal setup failure", async ({ installError }) => {
-    vi.mocked(prepareAuthChoiceLoadedPluginProvider).mockResolvedValue({
-      config,
-      retrySelection: true,
-      ...(installError ? { installError } : {}),
-      authProfiles: [],
-      persistAuthProfiles,
-    });
+    vi.mocked(prepareAuthChoiceLoadedPluginProvider).mockImplementation(async (_params, consume) =>
+      consume({
+        config,
+        retrySelection: true,
+        ...(installError ? { installError } : {}),
+        authProfiles: [],
+        persistAuthProfiles,
+      }),
+    );
 
     const plan = await buildTestPlan({
       kind: "provider-auth",
@@ -142,24 +144,31 @@ describe("catalog-only provider preparation", () => {
     "normalizes the starter while retaining trusted installation and the selected %s runtime",
     async (runtimeId) => {
       const normalizeModelId = vi.fn(() => "test-model");
-      vi.mocked(prepareAuthChoiceLoadedPluginProvider).mockResolvedValue({
-        config: {
-          ...config,
-          agents: {
-            ...config.agents,
-            defaults: { models: { "fixture/starter-alias": { agentRuntime: { id: runtimeId } } } },
-          },
-          plugins: {
-            entries: { fixture: { enabled: true } },
-            installs: { fixture: { ...installRecord, spec: "untrusted-provider-patch" } },
-          },
-        },
-        pendingPluginInstalls: { fixture: installRecord },
-        agentModelOverride: "fixture/starter-alias",
-        provider: { id: "fixture", label: "Fixture", auth: [], normalizeModelId },
-        authProfiles: [],
-        persistAuthProfiles,
-      });
+      vi.mocked(prepareAuthChoiceLoadedPluginProvider).mockImplementation(
+        async (_params, consume) =>
+          consume(
+            {
+              config: {
+                ...config,
+                agents: {
+                  ...config.agents,
+                  defaults: {
+                    models: { "fixture/starter-alias": { agentRuntime: { id: runtimeId } } },
+                  },
+                },
+                plugins: {
+                  entries: { fixture: { enabled: true } },
+                  installs: { fixture: { ...installRecord, spec: "untrusted-provider-patch" } },
+                },
+              },
+              pendingPluginInstalls: { fixture: installRecord },
+              agentModelOverride: "fixture/starter-alias",
+              authProfiles: [],
+              persistAuthProfiles,
+            },
+            { id: "fixture", label: "Fixture", auth: [], normalizeModelId },
+          ),
+      );
       const plan = await buildTestPlan({
         kind: "provider-auth",
         authChoice: "fixture-api-key",

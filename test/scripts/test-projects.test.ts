@@ -91,6 +91,29 @@ describe("test runtime prerequisites", () => {
       "runtime",
     ],
     ["infra config", ["test/vitest/vitest.infra.config.ts"], "runtime"],
+    ["native SDK generation", ["src/plugins/plugin-module-generation.sdk.test.ts"], "runtime"],
+    [
+      "native SDK companion lifecycle",
+      ["src/plugin-sdk/channel-entry-contract.lifecycle.test.ts"],
+      "runtime",
+    ],
+    [
+      "native completion transport SDK",
+      ["src/agents/simple-completion-runtime.plugin-scope.test.ts"],
+      "runtime",
+    ],
+    ["agent core config", ["test/vitest/vitest.agents-core.config.ts"], "runtime"],
+    ["agent umbrella config", ["test/vitest/vitest.agents.config.ts"], "runtime"],
+    ["ordinary completion unit", ["src/agents/simple-completion-runtime.test.ts"], undefined],
+    [
+      "direct completion fixture without SDK imports",
+      ["src/plugins/runtime/runtime-llm.prepared-owner.test.ts"],
+      undefined,
+    ],
+    ["native inspection fixture", ["src/plugins/status.runtime-inspection.test.ts"], undefined],
+    ["source module generation", ["src/plugins/plugin-module-generation.test.ts"], undefined],
+    ["native module interop", ["src/plugins/plugin-module-generation.interop.test.ts"], undefined],
+    ["plugins config", ["test/vitest/vitest.plugins.config.ts"], "runtime"],
     ["ordinary update unit test", ["src/infra/update-candidate-canary.test.ts"], undefined],
     ["CLI directory", ["src/cli"], "runtime"],
     ["CLI config", ["test/vitest/vitest.cli.config.ts"], undefined],
@@ -169,6 +192,9 @@ describe("test runtime prerequisites", () => {
   });
 
   it.each([
+    ["plugins", ["plugin-module-generation.sdk.test.ts"], undefined],
+    ["agents-core", ["simple-completion-runtime.plugin-scope.test.ts"], undefined],
+    ["agents", ["simple-completion-runtime.plugin-scope.test.ts"], undefined],
     ["gateway-core", ["gateway-*.test.ts"], undefined],
     ["gateway-server", ["server-sidecar-retention.test.ts"], "runtime"],
     ["gateway-server", ["server.config-patch.test.ts"], "runtime"],

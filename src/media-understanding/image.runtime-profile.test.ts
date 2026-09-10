@@ -604,7 +604,7 @@ describe("describeImageWithModelCore", () => {
           modelRegistry: {},
         }),
       },
-      release: releasePreparedModelRuntimeMock,
+      [Symbol.asyncDispose]: releasePreparedModelRuntimeMock,
     });
     discoverModelsMock.mockReturnValue({
       find: vi.fn(() => ({

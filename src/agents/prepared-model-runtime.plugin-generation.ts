@@ -4,6 +4,7 @@ import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-
 import { augmentPreparedModelCatalogWithAgentHarness } from "./harness/model-catalog.js";
 import { resolveAgentRuntimePluginLoadPlan } from "./harness/runtime-plugin-load-plan.js";
 import { buildPreparedModelCatalogSnapshot } from "./model-catalog.js";
+import { ownPreparedPluginGeneration } from "./prepared-model-runtime.plugin-lifetime.js";
 import type {
   PreparedModelRuntimeCatalogMode,
   PreparedModelRuntimeInput,
@@ -122,9 +123,10 @@ export function createPreparedPluginGeneration(params: {
     if (params.pluginMetadataSnapshot === reusable.pluginMetadataSnapshot) {
       derivedGenerationBases.set(derived, reusable);
     }
+    ownPreparedPluginGeneration(derived);
     return derived;
   }
-  return Object.freeze({
+  const generation = Object.freeze({
     pluginMetadataSnapshot: params.pluginMetadataSnapshot,
     inlineProviderModels: Object.freeze([...params.inlineProviderModels]),
     configuredCatalogEntries: Object.freeze([...params.configuredCatalogEntries]),
@@ -147,6 +149,8 @@ export function createPreparedPluginGeneration(params: {
       ? { providerStaticModels: Object.freeze([...(params.providerStaticModels ?? [])]) }
       : {}),
   });
+  ownPreparedPluginGeneration(generation);
+  return generation;
 }
 
 export async function buildPreparedPluginModelCatalog(params: {

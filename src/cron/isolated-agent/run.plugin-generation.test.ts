@@ -78,7 +78,7 @@ describe("runCronIsolatedAgentTurn plugin generation carry", () => {
       modelCatalog: { entries: [], routeVariants: [] },
       pluginGeneration,
     });
-    const release = vi.fn();
+    const release = vi.fn(async () => {});
     const selectedGeneration = {
       ...pluginGeneration,
       pluginRegistry: createEmptyPluginRegistry(),
@@ -86,7 +86,7 @@ describe("runCronIsolatedAgentTurn plugin generation carry", () => {
     preparedRuntimeMocks.acquireRuntime.mockResolvedValue({
       snapshot: { config, metadataSnapshot, pluginRegistry: selectedGeneration.pluginRegistry },
       pluginGeneration: selectedGeneration,
-      release,
+      [Symbol.asyncDispose]: release,
     });
     mockRunCronFallbackPassthrough();
     const afterRun = createDeferred();
@@ -533,7 +533,7 @@ describe("runCronIsolatedAgentTurn plugin generation carry", () => {
         configuredCatalogEntries: [],
         inlineProviderModels: [],
       },
-      release: vi.fn(),
+      [Symbol.asyncDispose]: vi.fn(async () => {}),
     }));
     mockRunCronFallbackPassthrough();
     runEmbeddedAgentMock.mockResolvedValue({
@@ -624,10 +624,10 @@ describe("runCronIsolatedAgentTurn plugin generation carry", () => {
       setCliExecutionProvider: async () => {},
       seal: async () => {},
     });
-    const release = vi.fn();
+    const release = vi.fn(async () => {});
     preparedRuntimeMocks.acquireRuntime.mockResolvedValue({
       snapshot: { pluginRegistry: createEmptyPluginRegistry() },
-      release,
+      [Symbol.asyncDispose]: release,
     });
     try {
       await expect(runCronIsolatedAgentTurn(makeIsolatedAgentParamsFixture())).rejects.toThrow(

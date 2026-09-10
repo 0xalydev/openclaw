@@ -41,7 +41,9 @@ import {
 } from "./manager-provider-state.js";
 import {
   isTransientMemoryIndexManagerPurpose,
-  MemoryManagerRegistry,
+  getMemoryIndexManagerRegistry,
+  type MemoryManagerRegistry,
+  type MemoryManagerProviderFactory,
   normalizeMemoryIndexManagerPurpose,
   resolveMemoryIndexManagerCacheKey,
   type MemoryIndexManagerPurpose,
@@ -62,25 +64,39 @@ import {
 import { resolvePersistedMemoryVectorIndexState } from "./manager-vector-rebuild-state.js";
 
 const log = createSubsystemLogger("memory");
-const INDEX_MANAGER_REGISTRY = new MemoryManagerRegistry<MemoryIndexManager>();
 
 export async function closeAllMemoryIndexManagers(): Promise<void> {
   clearMemoryEmbeddingProbeCache();
-  await INDEX_MANAGER_REGISTRY.closeAll();
+  await getMemoryIndexManagerRegistry().closeAll();
 }
 
 export async function closeMemoryIndexManagersForAgent(params: { agentId: string }): Promise<void> {
-  await INDEX_MANAGER_REGISTRY.closeForAgent({
+  await getMemoryIndexManagerRegistry().closeForAgent({
     agentId: params.agentId,
     purpose: "default",
   });
-  await INDEX_MANAGER_REGISTRY.closeForAgent({
+  await getMemoryIndexManagerRegistry().closeForAgent({
     agentId: params.agentId,
     purpose: "maintenance",
   });
 }
 
 export class MemoryIndexManager extends MemorySearchOrchestration implements MemorySearchManager {
+  private readonly managerRegistry: MemoryManagerRegistry<MemoryIndexManager>;
+  protected readonly createProvider: MemoryManagerProviderFactory = (adapter, create) =>
+    this.managerRegistry.createProvider(this, adapter, create);
+  protected releaseProvider(provider: EmbeddingProvider): void {
+    this.managerRegistry.releaseProvider(this, provider);
+  }
+  protected canPublishEmbeddingProbe(): boolean {
+    return this.managerRegistry.canPublishProbe(this);
+  }
+  protected getEmbeddingProbeOwners() {
+    return this.managerRegistry.getProbeOwners(this);
+  }
+  protected get embeddingProbeCache() {
+    return this.managerRegistry.embeddingProbeCache;
+  }
   protected readonly cacheKey: string;
   protected readonly purpose: MemoryIndexManagerPurpose;
   protected override readonly acquireLocalService?: MemoryCoreAcquireLocalService;
@@ -134,7 +150,8 @@ export class MemoryIndexManager extends MemorySearchOrchestration implements Mem
     const cfg = source?.cfg ?? params.cfg;
     const agentId = source?.agentId ?? normalizeAgentId(params.agentId);
     const purpose = normalizeMemoryIndexManagerPurpose(params.purpose);
-    return await INDEX_MANAGER_REGISTRY.acquire(
+    const managerRegistry = source?.managerRegistry ?? getMemoryIndexManagerRegistry();
+    return await managerRegistry.acquire(
       { agentId, purpose },
       {
         prepare: () => {
@@ -162,6 +179,7 @@ export class MemoryIndexManager extends MemorySearchOrchestration implements Mem
             key,
             create: async () => {
               const manager = new MemoryIndexManager({
+                managerRegistry,
                 cacheKey: key,
                 cfg,
                 agentId,
@@ -172,10 +190,24 @@ export class MemoryIndexManager extends MemorySearchOrchestration implements Mem
                 acquireLocalService: params.acquireLocalService,
                 maintenanceSource: source,
               });
-              if (params.inspectSources) {
-                await manager.inspectDiagnosticSourceState();
+              managerRegistry.track(manager, key);
+              try {
+                if (params.inspectSources) {
+                  await manager.inspectDiagnosticSourceState();
+                }
+                return manager;
+              } catch (error) {
+                try {
+                  await manager.close();
+                } catch (cleanupError) {
+                  throw new AggregateError(
+                    [error, cleanupError],
+                    "Memory manager preparation cleanup failed",
+                    { cause: cleanupError },
+                  );
+                }
+                throw error;
               }
-              return manager;
             },
             reuse: (manager) => !manager.closing && !manager.closed && manager.db.isOpen,
           };
@@ -185,6 +217,7 @@ export class MemoryIndexManager extends MemorySearchOrchestration implements Mem
   }
 
   private constructor(params: {
+    managerRegistry: MemoryManagerRegistry<MemoryIndexManager>;
     cacheKey: string;
     cfg: OpenClawConfig;
     agentId: string;
@@ -196,6 +229,7 @@ export class MemoryIndexManager extends MemorySearchOrchestration implements Mem
     maintenanceSource?: MemoryIndexManager;
   }) {
     super();
+    this.managerRegistry = params.managerRegistry;
     const source = params.maintenanceSource;
     const effectiveSettings =
       source?.settings ?? resolveEffectiveMemorySearchSettings(params.settings);
@@ -628,7 +662,7 @@ export class MemoryIndexManager extends MemorySearchOrchestration implements Mem
     this.closePromise = closeOperation;
     try {
       await closeOperation;
-      INDEX_MANAGER_REGISTRY.deleteIfCurrent(this.cacheKey, this);
+      this.managerRegistry.deleteIfCurrent(this.cacheKey, this);
     } catch (err) {
       if (this.closePromise === closeOperation) {
         this.closePromise = null;

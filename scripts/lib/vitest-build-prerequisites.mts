@@ -26,6 +26,30 @@ export type VitestRuntimeTestSelection = {
 // while unrelated workers may still be importing its public plugin facades.
 const runtimeConsumers = [
   {
+    file: "test/scripts/plugin-inventory-module-refs.test.ts",
+    configs: ["test/vitest/vitest.tooling.config.ts"],
+    mode: "runtime",
+    dir: "",
+  },
+  {
+    file: "src/plugin-sdk/channel-entry-contract.lifecycle.test.ts",
+    configs: ["test/vitest/vitest.plugin-sdk.config.ts"],
+    mode: "runtime",
+    dir: "src",
+  },
+  {
+    file: "src/agents/simple-completion-runtime.plugin-scope.test.ts",
+    configs: ["test/vitest/vitest.agents-core.config.ts", "test/vitest/vitest.agents.config.ts"],
+    mode: "runtime",
+    dir: "src/agents",
+  },
+  {
+    file: "src/plugins/plugin-module-generation.sdk.test.ts",
+    configs: ["test/vitest/vitest.plugins.config.ts"],
+    mode: "runtime",
+    dir: "src/plugins",
+  },
+  {
     file: "test/agent-exec-code-mode.live.test.ts",
     configs: ["test/vitest/vitest.live.config.ts"],
     mode: "runtime",

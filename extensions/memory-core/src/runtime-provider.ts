@@ -7,6 +7,7 @@ import {
   closeMemorySearchManager,
   getMemorySearchManager,
 } from "./memory/index.js";
+import { getMemoryIndexManagerRegistry } from "./memory/manager-registry.js";
 import type { MemoryCoreRuntimeHost } from "./memory/runtime-host.js";
 import { classifyWorkspaceMemoryPaths } from "./workspace-path-classifier.js";
 
@@ -16,6 +17,7 @@ export function createMemoryRuntime(host: MemoryCoreRuntimeHost = {}) {
   }
 
   return {
+    prepareReload: (change) => getMemoryIndexManagerRegistry().prepareReload(change),
     async getMemorySearchManager(params) {
       const { manager, debug, error } = await getMemorySearchManager({
         ...params,

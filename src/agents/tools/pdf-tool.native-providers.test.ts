@@ -183,7 +183,7 @@ describe("PDF tool native provider paths", () => {
         input: ["text", "document"],
       });
       const modelRegistry = createPdfModelRegistry(find);
-      const release = vi.fn();
+      const release = vi.fn(async () => {});
       vi.mocked(preparedModelRuntime.acquireAgentRunPreparedModelRuntime).mockResolvedValueOnce({
         snapshot: withPreparedRuntimeFacts({
           agentDir: "/tmp/committed-pdf-agent",
@@ -191,7 +191,7 @@ describe("PDF tool native provider paths", () => {
           config: withPdfModel(GOOGLE_PDF_MODEL),
           createStores: () => ({ authStorage, modelRegistry }),
         }),
-        release,
+        [Symbol.asyncDispose]: release,
       } as never);
       const geminiSpy = vi
         .spyOn(pdfNativeProviders, "geminiAnalyzePdf")
@@ -225,36 +225,52 @@ describe("PDF tool native provider paths", () => {
     });
   });
 
-  it("releases the prepared runtime when store creation fails", async () => {
-    await withTempPdfAgentDir(async (agentDir) => {
-      await stubPdfToolInfra(agentDir, {
-        provider: "anthropic",
-        input: ["text", "document"],
-      });
-      const release = vi.fn();
-      vi.mocked(preparedModelRuntime.acquireAgentRunPreparedModelRuntime).mockResolvedValueOnce({
-        snapshot: {
-          agentDir,
-          config: withPdfModel(ANTHROPIC_PDF_MODEL),
-          createStores: () => {
-            throw new Error("store fork failed");
+  it.each([false, true])(
+    "preserves store failure when runtime disposal fails: %s",
+    async (cleanupFails) => {
+      await withTempPdfAgentDir(async (agentDir) => {
+        await stubPdfToolInfra(agentDir, {
+          provider: "anthropic",
+          input: ["text", "document"],
+        });
+        const storeError = new Error("store fork failed");
+        const cleanupError = new Error("runtime disposal failed");
+        const release = vi.fn(async () => {
+          if (cleanupFails) {
+            throw cleanupError;
+          }
+        });
+        vi.mocked(preparedModelRuntime.acquireAgentRunPreparedModelRuntime).mockResolvedValueOnce({
+          snapshot: {
+            agentDir,
+            config: withPdfModel(ANTHROPIC_PDF_MODEL),
+            createStores: () => {
+              throw storeError;
+            },
           },
-        },
-        release,
-      } as never);
-      const tool = requirePdfTool(
-        (await loadCreatePdfTool())({
-          config: withPdfModel(ANTHROPIC_PDF_MODEL),
-          agentDir,
-        }),
-      );
+          [Symbol.asyncDispose]: release,
+        } as never);
+        const tool = requirePdfTool(
+          (await loadCreatePdfTool())({
+            config: withPdfModel(ANTHROPIC_PDF_MODEL),
+            agentDir,
+          }),
+        );
 
-      await expect(
-        tool.execute("t1", { prompt: "summarize", pdf: "/tmp/doc.pdf" }),
-      ).rejects.toThrow("store fork failed");
-      expect(release).toHaveBeenCalledOnce();
-    });
-  });
+        const execution = tool.execute("t1", { prompt: "summarize", pdf: "/tmp/doc.pdf" });
+        if (cleanupFails) {
+          await expect(execution).rejects.toMatchObject({
+            name: "SuppressedError",
+            error: cleanupError,
+            suppressed: storeError,
+          });
+        } else {
+          await expect(execution).rejects.toBe(storeError);
+        }
+        expect(release).toHaveBeenCalledOnce();
+      });
+    },
+  );
 
   it("rejects pages parameter for native PDF providers", async () => {
     await withTempPdfAgentDir(async (agentDir) => {

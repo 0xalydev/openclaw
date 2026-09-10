@@ -702,8 +702,12 @@ export async function prepareCronRunContext(params: {
       },
     };
   } catch (error) {
-    preparedModelRuntimeLease?.release();
-    sessionWorkAdmission.release();
-    throw error;
+    try {
+      // oxlint-disable-next-line no-underscore-dangle -- This failure scope only owns disposal.
+      await using _failedRuntime = preparedModelRuntimeLease;
+      throw error;
+    } finally {
+      sessionWorkAdmission.release();
+    }
   }
 }
