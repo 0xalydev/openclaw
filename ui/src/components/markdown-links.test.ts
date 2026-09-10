@@ -1,5 +1,5 @@
 // Control UI tests cover markdown link rendering: autolinking, file links, and link marks.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { toSanitizedMarkdownHtml } from "./markdown.ts";
 
 function htmlFragment(html: string): HTMLElement {
@@ -473,6 +473,55 @@ describe("toSanitizedMarkdownHtml links", () => {
     it("leaves email autolinks unmarked", () => {
       const fragment = htmlFragment(toSanitizedMarkdownHtml("Email me at test@example.com"));
       expect(fragment.querySelector("a.markdown-bare-url")).toBeNull();
+    });
+  });
+
+  describe("session link marks", () => {
+    const originalLocation = window.location.href;
+
+    afterEach(() => window.history.replaceState({}, "", originalLocation));
+
+    it.each([
+      ["named chat", "/chat/main/session-12345678"],
+      ["agent main", "/chat/main"],
+      ["dashboard", "/dashboard/main/session-12345678"],
+      ["literal session", "/chat/main/discord/channel/123"],
+    ])("marks %s links without changing their label or destination", (_kind, path) => {
+      const href = `${window.location.origin}${path}`;
+      const fragment = htmlFragment(toSanitizedMarkdownHtml(`[the session](${href}) ${href}`));
+      const links = [...fragment.querySelectorAll<HTMLAnchorElement>("a")];
+      expect(links).toHaveLength(2);
+      expect(links.every((link) => link.classList.contains("markdown-session-link"))).toBe(true);
+      expect(links.map((link) => link.textContent)).toEqual(["the session", href]);
+      expect(links.map((link) => link.getAttribute("href"))).toEqual([href, href]);
+    });
+
+    it("recognizes base-path links and does not reuse another deployment’s cached markup", () => {
+      const input = "[the session](/control/chat/main/session-12345678)";
+      window.history.replaceState({}, "", "/chat/main");
+      expect(
+        htmlFragment(toSanitizedMarkdownHtml(input)).querySelector(".markdown-session-link"),
+      ).toBeNull();
+      window.history.replaceState({}, "", "/control/chat/main");
+      expect(
+        htmlFragment(toSanitizedMarkdownHtml(input)).querySelector(".markdown-session-link")
+          ?.textContent,
+      ).toBe("the session");
+    });
+
+    it.each([
+      ["external chat", "[external](https://example.com/chat/main/session-12345678)"],
+      ["session list", "[sessions](/sessions)"],
+      ["chat landing", "[chat](/chat)"],
+      ["fragment", "[section](#section)"],
+      ["query containing a session", "[search](/search?next=/chat/main/session-12345678)"],
+      ["image-only link", "[![badge](data:image/png;base64,x)](/chat/main/session-12345678)"],
+      ["code", "`/chat/main/session-12345678`"],
+    ])("leaves %s unmarked", (_kind, input) => {
+      window.history.replaceState({}, "", "/chat/main");
+      expect(
+        htmlFragment(toSanitizedMarkdownHtml(input)).querySelector(".markdown-session-link"),
+      ).toBeNull();
     });
   });
 

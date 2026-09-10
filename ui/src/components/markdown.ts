@@ -3,6 +3,7 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import DOMPurify from "dompurify";
 import { stripUnsupportedCitationControlMarkers } from "../../../src/shared/text/citation-control-markers.js";
 import { routeIdFromPath } from "../app-route-paths.ts";
+import { sessionRefFromPath } from "../app-session-route-paths.ts";
 import { resolveControlUiBasePath } from "../app/browser.ts";
 import { i18n, t } from "../i18n/index.ts";
 import { truncateText } from "../lib/format.ts";
@@ -461,6 +462,17 @@ function installHooks() {
         node.removeAttribute("href");
         return;
       }
+      // Only this Control UI can identify its session routes. Do not brand
+      // another site’s /chat path, fragment-only links, or image badges.
+      if (
+        url.origin === window.location.origin &&
+        !normalizedHref.startsWith("#") &&
+        !normalizedHref.startsWith("?") &&
+        node.textContent?.trim() &&
+        sessionRefFromPath(url.pathname, currentControlUiBasePath())
+      ) {
+        node.classList.add("markdown-session-link");
+      }
     } catch {
       // Relative URLs are fine; malformed absolute URLs with dangerous schemes
       // will fail to parse and keep their href — but DOMPurify already strips
@@ -543,7 +555,8 @@ export function toSanitizedMarkdownHtml(
   }
   const renderInput = isMarkdownBlockArtText(rawInput) ? rawInput : input;
   const cacheable = input.length <= MARKDOWN_CACHE_MAX_CHARS;
-  const cacheKey = `${i18n.getLocale()}\0${renderOptions.assistantTranscriptRoleHeaders}\0${renderOptions.codeBlockChrome}\0${renderOptions.fileLinks}\0${renderOptions.interactiveImages}\0${renderOptions.mode}\0${renderInput}`;
+  const linkContext = `${window.location.href}\0${currentControlUiBasePath()}`;
+  const cacheKey = `${linkContext}\0${i18n.getLocale()}\0${renderOptions.assistantTranscriptRoleHeaders}\0${renderOptions.codeBlockChrome}\0${renderOptions.fileLinks}\0${renderOptions.interactiveImages}\0${renderOptions.mode}\0${renderInput}`;
   if (cacheable) {
     const cached = getCachedMarkdown(cacheKey);
     if (cached !== null) {

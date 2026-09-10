@@ -246,14 +246,19 @@
   opacity: 0.8;
 }
 
-/* GitHub links carry the brand mark so a bare URL and a "[#3434]" shorthand read
-   as the same destination. Painted as a masked ::before rather than markup: it
-   stays out of the accessibility tree and out of copied text, and currentColor
-   keeps it on the link color in every theme. Sized in em so it tracks
-   --chat-text-size (14px default) and the user's text-scale setting. */
+/* Destination marks are decorative: no accessibility or copied-text content.
+   Em sizing and currentColor follow the chat text scale and theme. */
 .chat-text :where(a.markdown-github-link)::before {
-  --github-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.78 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.26 5.68.41.35.78 1.05.78 2.12 0 1.53-.01 2.76-.01 3.14 0 .3.21.67.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z'/%3E%3C/svg%3E");
+  --markdown-link-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.78 0c2.21-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.26 5.68.41.35.78 1.05.78 2.12 0 1.53-.01 2.76-.01 3.14 0 .3.21.67.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z'/%3E%3C/svg%3E");
+}
 
+/* Filled, static silhouette of icons.claw (components/icons-tools.ts).
+   Unlike the progress indicator, a destination mark must never animate. */
+.chat-text :where(a.markdown-session-link)::before {
+  --markdown-link-mark: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M8.2%2010%20A5.2%205.2%200%201%200%208.2%2020.4%20A5.2%205.2%200%200%200%208.2%2010%20Z%20M10.2%2020%20C14.5%2020.8%2019%2018.6%2022.3%2013.2%20C21%2012.9%2019.7%2012.7%2018.4%2012.8%20L17.5%2014.6%20L16%2012.9%20L14.3%2014.5%20L13.5%2013%20L11.5%2014.2%20Z%22%2F%3E%3Cpath%20d%3D%22M5.6%2012.2%20C5.2%205.6%2010.4%201.4%2015.6%202%20C19.4%202.6%2021.8%205.2%2022.6%208.2%20C20.9%207.7%2019.2%207.6%2017.6%207.9%20L16.9%206.3%20L15.2%208.5%20C13.6%209.4%2012.2%2010.9%2011.6%2012.4%20L6.8%2013%20Z%22%2F%3E%3C%2Fsvg%3E");
+}
+
+.chat-text :where(a.markdown-github-link, a.markdown-session-link)::before {
   content: "";
   display: inline-block;
   width: 1em;
@@ -261,18 +266,16 @@
   margin-inline-end: 0.3em;
   vertical-align: -0.14em;
   background: currentColor;
-  mask: var(--github-mark) center / contain no-repeat;
-  -webkit-mask: var(--github-mark) center / contain no-repeat;
+  mask: var(--markdown-link-mark) center / contain no-repeat;
+  -webkit-mask: var(--markdown-link-mark) center / contain no-repeat;
 }
 
-/* The glyph already marks these as links; a resting underline doubles the
-   signal and clutters dense URL text. Hover restores it as the affordance,
-   like the file-link convention below. */
-.chat-text :where(a.markdown-github-link) {
+/* The glyph already marks these as links; hover restores the underline. */
+.chat-text :where(a.markdown-github-link, a.markdown-session-link) {
   text-decoration: none;
 }
 
-.chat-text :where(a.markdown-github-link:hover) {
+.chat-text :where(a.markdown-github-link:hover, a.markdown-session-link:hover) {
   text-decoration: underline;
 }
 
