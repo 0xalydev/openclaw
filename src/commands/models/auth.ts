@@ -237,7 +237,18 @@ function preferSetupAuthProviders(params: {
   config: OpenClawConfig;
   workspaceDir: string;
   requestedProvider?: string;
+  ownerPluginId?: string;
 }): ProviderPlugin[] {
+  if (params.ownerPluginId) {
+    return mergeSetupProviders(
+      params.providers,
+      resolvePluginSetupRegistry({
+        config: params.config,
+        workspaceDir: params.workspaceDir,
+        pluginIds: [params.ownerPluginId],
+      }).providers.map((entry) => entry.provider),
+    );
+  }
   const requestedProvider = params.requestedProvider
     ? normalizeManualAuthProvider(params.requestedProvider)
     : undefined;
@@ -261,6 +272,7 @@ async function resolveModelsAuthContext(params?: {
   requestedProvider?: string;
   rawAgentId?: string | null;
   config?: OpenClawConfig;
+  ownerPluginId?: string;
 }): Promise<ResolvedModelsAuthContext> {
   const config = params?.config ?? (await loadValidConfigOrThrow());
   const { agentId, agentDir } = await resolveModelsAuthAgent(params?.rawAgentId, config);
@@ -276,6 +288,7 @@ async function resolveModelsAuthContext(params?: {
     workspaceDir,
     mode: "setup",
     includeUntrustedWorkspacePlugins: false,
+    ...(params?.ownerPluginId ? { onlyPluginIds: [params.ownerPluginId] } : {}),
     ...(providerRef ? { providerRefs: [providerRef] } : {}),
   });
   const authProviders = preferSetupAuthProviders({
@@ -283,6 +296,7 @@ async function resolveModelsAuthContext(params?: {
     config,
     workspaceDir,
     requestedProvider: providerRef,
+    ownerPluginId: params?.ownerPluginId,
   });
   return {
     config,
@@ -408,6 +422,7 @@ async function persistProviderAuthResult(params: {
   prompter: WizardPrompter;
   setDefault?: boolean;
   env?: NodeJS.ProcessEnv;
+  assertCurrent?: () => void;
 }): Promise<ProviderAuthResult["profiles"]> {
   const defaultModel = params.result.defaultModel
     ? normalizeAgentModelRefForConfig(params.result.defaultModel)
@@ -421,6 +436,7 @@ async function persistProviderAuthResult(params: {
   for (const candidate of profiles) {
     const persisted = await persistProviderAuthProfilesAfterLogin({
       profiles: [candidate],
+      beforeWrite: params.assertCurrent,
       config: params.config,
       env: params.env,
       agentDir: params.agentDir,
@@ -428,6 +444,7 @@ async function persistProviderAuthResult(params: {
     });
     const profile = expectDefined(persisted[0], "persisted auth profile");
     persistedProfiles.push(profile);
+    params.assertCurrent?.();
     await promotePersistedAuthProfile({
       config: params.config,
       agentDir: params.agentDir,
@@ -440,24 +457,29 @@ async function persistProviderAuthResult(params: {
   // the provider explicitly returns a config patch or the user opts into a
   // default-model write.
   if (shouldUpdateConfig) {
-    const updated = await updateConfig((cfg) => {
-      const priorAgentsDefaultsModel = cfg.agents?.defaults?.model;
-      let next = cfg;
-      if (params.result.configPatch) {
-        next = applyProviderAuthConfigPatch(next, params.result.configPatch, {
-          replaceDefaultModels: params.result.replaceDefaultModels,
+    const updated = await updateConfig(
+      (cfg) => {
+        params.assertCurrent?.();
+        const priorAgentsDefaultsModel = cfg.agents?.defaults?.model;
+        let next = cfg;
+        if (params.result.configPatch) {
+          next = applyProviderAuthConfigPatch(next, params.result.configPatch, {
+            replaceDefaultModels: params.result.replaceDefaultModels,
+          });
+        }
+        next = restorePriorAgentsDefaultsModelUnlessOptIn({
+          cfg: next,
+          priorAgentsDefaultsModel,
+          setDefault: params.setDefault,
         });
-      }
-      next = restorePriorAgentsDefaultsModelUnlessOptIn({
-        cfg: next,
-        priorAgentsDefaultsModel,
-        setDefault: params.setDefault,
-      });
-      if (params.setDefault && defaultModel) {
-        next = applyDefaultModel(next, defaultModel);
-      }
-      return next;
-    });
+        if (params.setDefault && defaultModel) {
+          next = applyDefaultModel(next, defaultModel);
+        }
+        return next;
+      },
+      undefined,
+      params.assertCurrent,
+    );
     if (defaultModel) {
       const repaired = await repairCodexRuntimePluginInstallForModelSelection({
         cfg: updated,
@@ -551,14 +573,19 @@ async function runProviderAuthMethod(params: {
   prompter: WizardPrompter;
   profileId?: string;
   setDefault?: boolean;
+  credentialOnly?: boolean;
+  assertCurrent?: () => void;
   env?: NodeJS.ProcessEnv;
   isRemote?: boolean;
   signal?: AbortSignal;
   openUrl?: (url: string) => Promise<void>;
 }): Promise<{ result: ProviderAuthResult; profiles: ProviderAuthResult["profiles"] }> {
   params.signal?.throwIfAborted();
+  params.assertCurrent?.();
   const result = await params.method.run({
     config: params.config,
+    credentialOnly: params.credentialOnly,
+    assertCurrent: params.assertCurrent,
     env: params.env ?? process.env,
     agentDir: params.agentDir,
     workspaceDir: params.workspaceDir,
@@ -578,14 +605,31 @@ async function runProviderAuthMethod(params: {
     },
   });
   params.signal?.throwIfAborted();
+  const connectionResult = params.credentialOnly
+    ? {
+        profiles: result.profiles,
+        notes: result.notes,
+        ...(result.configPatch
+          ? {
+              configPatch: {
+                ...(result.configPatch.models?.providers
+                  ? { models: { providers: result.configPatch.models.providers } }
+                  : {}),
+                ...(result.configPatch.plugins ? { plugins: result.configPatch.plugins } : {}),
+              },
+            }
+          : {}),
+      }
+    : result;
   const profiles = resolveLoginProfiles({
-    result,
+    result: connectionResult,
     requestedProfileId: params.profileId,
   });
 
   const persistedProfiles = await persistProviderAuthResult({
-    result,
+    result: connectionResult,
     profiles,
+    assertCurrent: params.assertCurrent,
     config: params.config,
     agentId: params.agentId,
     agentDir: params.agentDir,
@@ -595,7 +639,7 @@ async function runProviderAuthMethod(params: {
     env: params.env ?? process.env,
   });
 
-  return { result, profiles: persistedProfiles };
+  return { result: connectionResult, profiles: persistedProfiles };
 }
 
 /** Runs an interactive provider setup-token auth flow. */
@@ -915,6 +959,9 @@ export type ModelsAuthLoginFlowResult = {
 };
 
 export type ModelsAuthLoginFlowOptions = LoginOptions & {
+  ownerPluginId?: string;
+  credentialOnly?: boolean;
+  assertCurrent?: () => void;
   config?: OpenClawConfig;
   runtime: RuntimeEnv;
   prompter: WizardPrompter;
@@ -982,6 +1029,7 @@ export async function runModelsAuthLoginFlowCore(
     requestedProvider: requestedProviderId,
     rawAgentId: opts.agent,
     config: opts.config,
+    ownerPluginId: opts.ownerPluginId,
   });
   const prompter = opts.prompter;
   let authProviders = listProvidersWithAuthMethods(context.providers);
@@ -989,6 +1037,7 @@ export async function runModelsAuthLoginFlowCore(
     ? resolveProviderMatch(authProviders, requestedProviderId)
     : null;
   const useProviderPicker =
+    !opts.ownerPluginId &&
     requestedProviderId !== undefined &&
     requestedProvider === null &&
     isCliProvider(requestedProviderId, context.config);
@@ -1040,11 +1089,17 @@ export async function runModelsAuthLoginFlowCore(
     );
   }
 
-  const chosenMethod = await pickProviderAuthMethod({
-    provider: selectedProvider,
-    requestedMethod: opts.method,
-    prompter,
-  });
+  if (opts.ownerPluginId && selectedProvider.id !== opts.provider) {
+    throw new Error("The selected provider login is no longer available.");
+  }
+
+  const chosenMethod = opts.ownerPluginId
+    ? selectedProvider.auth.find((method) => method.id === opts.method)
+    : await pickProviderAuthMethod({
+        provider: selectedProvider,
+        requestedMethod: opts.method,
+        prompter,
+      });
 
   if (!chosenMethod) {
     throw new Error(
@@ -1053,7 +1108,7 @@ export async function runModelsAuthLoginFlowCore(
   }
 
   const imported =
-    !opts.force && !opts.profileId && !opts.setDefault
+    !opts.credentialOnly && !opts.force && !opts.profileId && !opts.setDefault
       ? await tryImportProviderCredential({
           method: chosenMethod,
           providerId: selectedProvider.id,
@@ -1134,6 +1189,8 @@ export async function runModelsAuthLoginFlowCore(
     prompter,
     profileId: opts.profileId,
     setDefault: opts.setDefault,
+    credentialOnly: opts.credentialOnly,
+    assertCurrent: opts.assertCurrent,
     env: opts.env,
     isRemote: opts.isRemote,
     signal: opts.signal,

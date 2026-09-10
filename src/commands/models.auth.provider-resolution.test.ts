@@ -218,7 +218,7 @@ describe("resolveRequestedLoginProviderOrThrow", () => {
 });
 
 describe("models auth login explicit credential selection", () => {
-  it.each(["force", "profile-id", "set-default", "unavailable-import"])(
+  it.each(["force", "profile-id", "set-default", "unavailable-import", "credential-only"])(
     "uses fresh authentication for %s with the gateway stopped",
     async (selection) => {
       const state = await createOpenClawTestState({
@@ -300,8 +300,11 @@ describe("models auth login explicit credential selection", () => {
               id: ${JSON.stringify(provider)}, label: "Auth store proof",
               auth: [{ id: "token", label: "Fixture token", kind: "token",
                 credentialImport: { migrationProviderId: ${JSON.stringify(provider)}, itemId: "auth:shared", credentialKind: "token" },
-                async run() {
-                  return ${JSON.stringify({ profiles: [{ profileId: `${provider}:fresh`, credential: fresh }], defaultModel: `${provider}/recommended` })};
+                async run(ctx) {
+                  if (${JSON.stringify(selection)} === "credential-only" && !ctx.credentialOnly) {
+                    throw new Error("Credential-only login attempted starter discovery");
+                  }
+                  return ${JSON.stringify({ profiles: [{ profileId: `${provider}:fresh`, credential: fresh }], defaultModel: `${provider}/recommended`, ...(selection === "credential-only" ? { configPatch: { agents: { defaults: { model: { primary: `${provider}/recommended` }, models: { [`${provider}/*`]: {} } } } } } : {}) })};
                 }
               }]
             });
@@ -348,7 +351,9 @@ describe("models auth login explicit credential selection", () => {
               ? { profileId: freshId }
               : selection === "set-default"
                 ? { setDefault: true }
-                : {}),
+                : selection === "credential-only"
+                  ? { credentialOnly: true }
+                  : {}),
           config,
           runtime,
           prompter: createWizardPrompter({
@@ -362,6 +367,9 @@ describe("models auth login explicit credential selection", () => {
         expect(savedConfig.agents.defaults.model.primary).toBe(
           selection === "set-default" ? "authstore-proof/recommended" : "other-proof/existing",
         );
+        if (selection === "credential-only") {
+          expect(savedConfig.agents.defaults.models).toBeUndefined();
+        }
         expect(loadPersistedAuthProfileStore()?.profiles).toEqual({
           ...(selection !== "force" ? { [`${provider}:shared`]: expired } : {}),
           [freshId]: fresh,
