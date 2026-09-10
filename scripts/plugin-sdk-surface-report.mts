@@ -364,7 +364,9 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: approved bounded TAR inspection through the archive admission owner.
       // +1: canonical runtime-context classifier for native history projection.
       // +1: prepared model-specific runtime choices for channel consumers.
-      4448,
+      // +6: provider transcript commit params, result, and host capability types through
+      //     the focused agent-harness and agent-harness-runtime barrels.
+      4454,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
