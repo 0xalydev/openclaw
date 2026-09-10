@@ -1,5 +1,6 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { runWithGatewayIndependentRootWorkAdmission } from "../process/gateway-work-admission.js";
+import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import { isTaskFlowCancellationPending } from "./task-cancellation-state.js";
 import { isTerminalTaskStatus } from "./task-executor-policy.js";
@@ -9,7 +10,10 @@ import {
   syncFlowFromTaskResult,
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-runtime-internal.js";
-import { clearTaskActivity, flushTaskActivity } from "./task-registry-activity.js";
+import {
+  prepareTaskActivityRetirement,
+  publishPreparedTaskActivityRetirement,
+} from "./task-registry-activity.js";
 import { ensureLinkedTaskFlowRegistryReady } from "./task-registry-common.js";
 import { findLatestTaskForFlowId, listTasksForFlowId } from "./task-registry-query.js";
 import {
@@ -36,6 +40,7 @@ import {
   tryPersistTaskDeliveryStateUpsert,
   tryPersistTaskUpsert,
 } from "./task-registry-state.js";
+import { bindTaskRecord, replaceTaskRunRowInDatabase } from "./task-registry.store.sqlite.js";
 import type { TaskDeliveryState, TaskRecord } from "./task-registry.types.js";
 import { resolveTaskCleanupAfter } from "./task-retention.js";
 
@@ -153,11 +158,29 @@ export function syncFlowFromTaskAfterTaskMutation(task: TaskRecord, operation: s
   scheduleTaskFlowSyncRetry(task, operation);
 }
 
+function syncTaskAfterPublishedMutation(task: TaskRecord, operation: string): void {
+  syncFlowFromTaskAfterTaskMutation(task, operation);
+  try {
+    syncManagedFlowCancellationFromTask(task);
+  } catch (error) {
+    taskRegistryLog.warn("Failed to finalize managed flow cancellation from task update", {
+      taskId: task.taskId,
+      flowId: task.parentFlowId,
+      error,
+    });
+  }
+}
+
 export function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskRecord | null {
   const current = tasks.get(taskId);
   if (!current) {
     return null;
   }
+  const next = buildUpdatedTaskRecord(current, patch);
+  return commitTaskUpdate(current, next, patch);
+}
+
+function buildUpdatedTaskRecord(current: TaskRecord, patch: Partial<TaskRecord>): TaskRecord {
   const updated = {
     ...current,
     ...patch,
@@ -179,6 +202,17 @@ export function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskReco
     const createdAt = next.createdAt ?? Date.now();
     next.cleanupAfter = resolveTaskCleanupAfter({ ...next, createdAt });
   }
+  return next;
+}
+
+function commitTaskUpdate(
+  current: TaskRecord,
+  next: TaskRecord,
+  patch: Partial<TaskRecord>,
+): TaskRecord | null {
+  const taskId = current.taskId;
+  const becomesTerminal =
+    !isTerminalTaskStatus(current.status) && isTerminalTaskStatus(next.status);
   const sessionIndexChanged =
     normalizeOptionalString(current.requesterSessionKey) !==
       normalizeOptionalString(next.requesterSessionKey) ||
@@ -186,11 +220,9 @@ export function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskReco
     normalizeOptionalString(current.childSessionKey) !==
       normalizeOptionalString(next.childSessionKey);
   const parentFlowIndexChanged = current.parentFlowId?.trim() !== next.parentFlowId?.trim();
+  const activityRetirement = becomesTerminal ? prepareTaskActivityRetirement(current) : undefined;
   ensureLinkedTaskFlowRegistryReady(current);
   ensureLinkedTaskFlowRegistryReady(next);
-  if (becomesTerminal) {
-    flushTaskActivity(taskId);
-  }
   // Persist before mutating memory. If the store rejects the write, keep the
   // in-memory mirror at the durable value and report that no mutation applied.
   if (!tryPersistTaskUpsert(next, "update")) {
@@ -198,9 +230,6 @@ export function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskReco
   }
   tasks.set(taskId, next);
   bumpTaskRegistryRevision();
-  if (becomesTerminal) {
-    clearTaskActivity(taskId);
-  }
   if (patch.runId && patch.runId !== current.runId) {
     rebuildRunIdIndex();
   }
@@ -214,22 +243,91 @@ export function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskReco
     deleteParentFlowIdIndex(taskId, current);
     addParentFlowIdIndex(taskId, next);
   }
-  syncFlowFromTaskAfterTaskMutation(next, "update");
+  const retireActivity = () => {
+    if (activityRetirement) {
+      publishPreparedTaskActivityRetirement(activityRetirement, () => tasks.get(taskId) === next);
+    }
+  };
+  if (tasks.get(taskId) !== next) {
+    retireActivity();
+    return cloneTaskRecord(tasks.get(taskId) ?? next);
+  }
+  syncTaskAfterPublishedMutation(next, "update");
+  if (tasks.get(taskId) !== next) {
+    retireActivity();
+    return cloneTaskRecord(tasks.get(taskId) ?? next);
+  }
+  retireActivity();
+  if (tasks.get(taskId) !== next) {
+    return cloneTaskRecord(tasks.get(taskId) ?? next);
+  }
+  if (tasks.get(taskId) === next) {
+    emitTaskRegistryObserverEvent(() => ({
+      kind: "upserted",
+      task: cloneTaskRecordForObserver(next),
+      previous: cloneTaskRecordForObserver(current),
+    }));
+  }
+  return cloneTaskRecord(tasks.get(taskId) ?? next);
+}
+
+class TaskExpectedSnapshotMismatch extends Error {}
+
+/**
+ * Commits exact task snapshots together, then publishes every cache before
+ * releasing flow synchronization or observers.
+ */
+export function updateTaskExpectedSnapshots(
+  updates: readonly { expected: TaskRecord; patch: Partial<TaskRecord> }[],
+): TaskRecord[] {
+  const prepared = updates.map(({ expected, patch }) => {
+    const current = tasks.get(expected.taskId);
+    return current === expected
+      ? { expected, next: buildUpdatedTaskRecord(current, patch) }
+      : undefined;
+  });
+  if (prepared.some((entry) => entry === undefined)) {
+    return [];
+  }
+  const exact = prepared.filter((entry) => entry !== undefined);
   try {
-    syncManagedFlowCancellationFromTask(next);
+    runOpenClawStateWriteTransaction((database) => {
+      for (const entry of exact) {
+        if (
+          !replaceTaskRunRowInDatabase({
+            database,
+            expected: bindTaskRecord(entry.expected),
+            next: bindTaskRecord(entry.next),
+          })
+        ) {
+          throw new TaskExpectedSnapshotMismatch();
+        }
+      }
+    });
   } catch (error) {
-    taskRegistryLog.warn("Failed to finalize managed flow cancellation from task update", {
-      taskId,
-      flowId: next.parentFlowId,
-      error,
+    if (error instanceof TaskExpectedSnapshotMismatch) {
+      return [];
+    }
+    throw error;
+  }
+  const deferredObserverEvents: Array<() => void> = [];
+  for (const entry of exact) {
+    publishTaskRecordAfterAtomicStore(entry.next, {
+      syncTaskFlow: false,
+      deferredObserverEvents,
     });
   }
-  emitTaskRegistryObserverEvent(() => ({
-    kind: "upserted",
-    task: cloneTaskRecordForObserver(next),
-    previous: cloneTaskRecordForObserver(current),
-  }));
-  return cloneTaskRecord(next);
+  for (const entry of exact) {
+    const current = tasks.get(entry.expected.taskId);
+    if (current) {
+      syncTaskAfterPublishedMutation(current, "atomic task snapshot update");
+    }
+  }
+  deferredObserverEvents.forEach((emit) => emit());
+  return exact.flatMap((entry) => {
+    const current = tasks.get(entry.expected.taskId);
+    return current ? [cloneTaskRecord(current)] : [];
+  });
 }
 
 /** Publishes a record already committed by a cross-owner shared-state transaction. */
@@ -243,9 +341,8 @@ export function publishTaskRecordAfterAtomicStore(
     current !== undefined &&
     !isTerminalTaskStatus(current.status) &&
     isTerminalTaskStatus(next.status);
-  if (becomesTerminal) {
-    flushTaskActivity(next.taskId);
-  }
+  const activityRetirement =
+    becomesTerminal && current ? prepareTaskActivityRetirement(current) : undefined;
   if (current) {
     deleteOwnerKeyIndex(next.taskId, current);
     deleteParentFlowIdIndex(next.taskId, current);
@@ -253,22 +350,29 @@ export function publishTaskRecordAfterAtomicStore(
   }
   tasks.set(next.taskId, next);
   bumpTaskRegistryRevision();
-  if (becomesTerminal) {
-    clearTaskActivity(next.taskId);
-  }
   addOwnerKeyIndex(next.taskId, next);
   addParentFlowIdIndex(next.taskId, next);
   addRelatedSessionKeyIndex(next.taskId, next);
   rebuildRunIdIndex();
   if (options?.syncTaskFlow !== false) {
-    syncFlowFromTaskAfterTaskMutation(next, "atomic completion admission");
+    syncTaskAfterPublishedMutation(next, "atomic completion admission");
   }
-  const emit = () =>
+  const emit = () => {
+    if (activityRetirement) {
+      publishPreparedTaskActivityRetirement(
+        activityRetirement,
+        () => tasks.get(next.taskId) === next,
+      );
+    }
+    if (tasks.get(next.taskId) !== next) {
+      return;
+    }
     emitTaskRegistryObserverEvent(() => ({
       kind: "upserted",
       task: cloneTaskRecordForObserver(next),
       ...(current ? { previous: cloneTaskRecordForObserver(current) } : {}),
     }));
+  };
   if (options?.deferredObserverEvents) {
     options.deferredObserverEvents.push(emit);
   } else {
