@@ -302,6 +302,11 @@ type QaTransportAdapterDefinition = Awaited<
   ReturnType<NonNullable<QaRunnerCliRegistration["adapterFactory"]>["create"]>
 >;
 
+export type QaGatewayRuntimeBootstrap = {
+  modulePath: string;
+  payload: string;
+};
+
 export type QaTransportAdapter = Omit<
   QaTransportAdapterDefinition,
   "assertTransportHealthy" | "resetTransport"
@@ -315,6 +320,7 @@ export type QaTransportAdapter = Omit<
     timeoutMs?: number,
     intervalMs?: number,
   ) => Promise<T>;
+  createRuntimeBootstrap?: (repoRoot: string) => QaGatewayRuntimeBootstrap;
 };
 
 export abstract class QaStateBackedTransportAdapter implements QaTransportAdapter {

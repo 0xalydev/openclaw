@@ -9,6 +9,7 @@ import { DEFAULT_QA_LIVE_PROVIDER_MODE, formatQaProviderModeHelp } from "../../p
 import type { QaTransportAdapterFactory } from "../../qa-transport-registry.js";
 
 export type LiveTransportQaCommandOptions = QaRunnerCommandOptions & {
+  channelDriver?: string;
   concurrency?: number;
 };
 
@@ -28,6 +29,7 @@ type LiveTransportQaCommanderOptions = {
   sutAccount?: string;
   credentialSource?: string;
   credentialRole?: string;
+  channelDriver?: string;
 };
 
 export type LiveTransportQaCliRegistration = Omit<QaRunnerCliRegistration, "adapterFactory"> & {
@@ -40,6 +42,7 @@ type LiveTransportQaCliRegistrationOptions = {
     sourceDescription?: string;
     roleDescription?: string;
   };
+  channelDriverHelp?: string;
   defaultProviderMode: string;
   description: string;
   providerModeHelp: string;
@@ -47,6 +50,7 @@ type LiveTransportQaCliRegistrationOptions = {
   outputDirHelp: string;
   profileHelp?: string;
   failFastHelp?: string;
+  normalizeInactiveSelectionOptions?: boolean;
   allowFailuresHelp?: string;
   scenarioHelp: string;
   sutAccountHelp: string;
@@ -67,7 +71,10 @@ function collectStringOption(value: string, previous: string[]) {
   return trimmed ? [...previous, trimmed] : previous;
 }
 
-function mapCommanderOptions(opts: LiveTransportQaCommanderOptions): LiveTransportQaCommandOptions {
+function mapCommanderOptions(
+  opts: LiveTransportQaCommanderOptions,
+  normalizeInactiveSelectionOptions: boolean,
+): LiveTransportQaCommandOptions {
   return {
     ...(opts.concurrency !== undefined ? { concurrency: opts.concurrency } : {}),
     repoRoot: opts.repoRoot,
@@ -77,13 +84,20 @@ function mapCommanderOptions(opts: LiveTransportQaCommanderOptions): LiveTranspo
     alternateModel: opts.altModel,
     fastMode: opts.fast,
     allowFailures: opts.allowFailures,
-    failFast: opts.failFast,
-    profile: opts.profile,
+    ...(normalizeInactiveSelectionOptions || opts.failFast !== undefined
+      ? { failFast: opts.failFast }
+      : {}),
+    ...(normalizeInactiveSelectionOptions || opts.profile !== undefined
+      ? { profile: opts.profile }
+      : {}),
     scenarioIds: opts.scenario,
-    listScenarios: opts.listScenarios,
+    listScenarios: normalizeInactiveSelectionOptions
+      ? opts.listScenarios || undefined
+      : opts.listScenarios,
     sutAccountId: opts.sutAccount,
     credentialSource: opts.credentialSource,
     credentialRole: opts.credentialRole,
+    ...(opts.channelDriver ? { channelDriver: opts.channelDriver } : {}),
   };
 }
 
@@ -135,8 +149,13 @@ function createSharedLiveTransportQaCliRegistration(
           command.option("--credential-role <role>", params.credentialOptions.roleDescription);
         }
       }
+      if (params.channelDriverHelp) {
+        command.option("--channel-driver <live|crabline>", params.channelDriverHelp);
+      }
       command.action(async (opts: LiveTransportQaCommanderOptions) => {
-        await params.run(mapCommanderOptions(opts));
+        await params.run(
+          mapCommanderOptions(opts, params.normalizeInactiveSelectionOptions === true),
+        );
       });
     },
   };
@@ -185,10 +204,12 @@ export function createLiveTransportQaAdapterFactory(params: {
 }
 
 export function createStandardLiveTransportQaCliRegistration(params: {
+  channelDriverHelp?: string;
   channelId: string;
   channelLabel: string;
   createAdapter: NonNullable<LiveTransportQaCliRegistrationOptions["adapterFactory"]>["create"];
   description: string;
+  listScenariosHelp?: string;
 }): LiveTransportQaCliRegistration {
   const adapterFactory = createLiveTransportQaAdapterFactory({
     id: params.channelId,
@@ -204,6 +225,9 @@ export function createStandardLiveTransportQaCliRegistration(params: {
         "Credential role for convex auth: maintainer or ci (default: ci in CI, maintainer otherwise)",
     },
     description: params.description,
+    normalizeInactiveSelectionOptions: true,
+    channelDriverHelp: params.channelDriverHelp,
+    listScenariosHelp: params.listScenariosHelp,
     outputDirHelp: `${params.channelLabel} QA artifact directory`,
     scenarioHelp: `Run only the named ${params.channelLabel} QA scenario (repeatable)`,
     sutAccountHelp: `Temporary ${params.channelLabel} account id inside the QA gateway config`,

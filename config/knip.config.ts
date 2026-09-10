@@ -290,6 +290,8 @@ const rootEntries = [
   "apps/linux/ui/main.js!",
   "apps/linux/ui/quickchat.js!",
   "scripts/qa/render-maturity-docs.ts!",
+  // QA Gateway children load this private endpoint bootstrap through Node --import.
+  "scripts/qa/discord-endpoint-bootstrap.mjs!",
   bundledPluginFile("telegram", "src/audit.ts", "!"),
   bundledPluginFile("telegram", "src/token.ts", "!"),
   "src/hooks/bundled/*/handler.ts!",

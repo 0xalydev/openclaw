@@ -3,6 +3,7 @@ import { createWriteStream, existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { closeQaRuntimeStores } from "openclaw/plugin-sdk/qa-runtime";
 import { uniqueStrings } from "openclaw/plugin-sdk/string-coerce-runtime";
@@ -45,7 +46,7 @@ import {
 } from "./providers/shared/mock-auth.js";
 import { seedQaAgentWorkspace } from "./qa-agent-workspace.js";
 import { buildQaGatewayConfig, type QaThinkingLevel } from "./qa-gateway-config.js";
-import type { QaTransportAdapter } from "./qa-transport.js";
+import type { QaGatewayRuntimeBootstrap, QaTransportAdapter } from "./qa-transport.js";
 import type { RuntimeId } from "./runtime-parity.js";
 export type QaGatewayChildStateMutationContext = {
   configPath: string;
@@ -87,6 +88,7 @@ export type QaGatewayChildParams = {
   onListening?: (context: QaGatewayChildListeningContext) => Promise<void> | void;
   mutateConfig?: (cfg: OpenClawConfig) => OpenClawConfig;
   runtimeEnvPatch?: NodeJS.ProcessEnv;
+  runtimeBootstrap?: QaGatewayRuntimeBootstrap;
 };
 
 function createQaGatewayEmptyTransport() {
@@ -175,6 +177,9 @@ export async function prepareQaGatewayChild(
   const gatewayArgsPrefix = gatewayCommand?.argsPrefix ?? [];
   const gatewayArgsSuffix = gatewayCommand?.argsSuffix ?? [];
   const gatewayCwd = gatewayCommand?.cwd ?? runtimeCwd;
+  if (params.runtimeBootstrap && gatewayExecutablePath) {
+    throw new Error("QA Gateway runtime bootstrap requires the repository Node.js entrypoint");
+  }
   const workspaceDir = path.join(tempRoot, "workspace");
   const stateDir = path.join(tempRoot, "state");
   const homeDir = path.join(tempRoot, "home");
@@ -300,6 +305,9 @@ export async function prepareQaGatewayChild(
     ? gatewayArgsPrefix
     : [distEntryPath, ...gatewayArgsPrefix];
   const buildGatewayArgs = () => [
+    ...(params.runtimeBootstrap
+      ? ["--import", pathToFileURL(params.runtimeBootstrap.modulePath).href]
+      : []),
     ...cliArgsPrefix,
     "gateway",
     "run",
