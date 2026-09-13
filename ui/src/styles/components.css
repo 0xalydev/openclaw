@@ -248,9 +248,14 @@ openclaw-session-owner-chip {
 }
 
 .session-glyph__icon,
-.session-glyph__icon svg {
+.session-glyph__icon svg,
+.session-glyph__icon img {
   width: 16px;
   height: 16px;
+}
+
+.session-glyph__icon img {
+  object-fit: contain;
 }
 
 .session-glyph__icon {
