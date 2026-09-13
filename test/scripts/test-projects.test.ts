@@ -57,6 +57,11 @@ describe("test runtime prerequisites", () => {
     ["tooling config", ["test/vitest/vitest.tooling.config.ts"], "private-qa"],
     ["QA config", ["test/vitest/vitest.extension-qa.config.ts"], "private-qa"],
     [
+      "Codex history Worker",
+      ["extensions/codex/src/app-server/session-history.test.ts"],
+      "runtime",
+    ],
+    [
       "sticker provider runtime",
       ["extensions/telegram/src/sticker-cache.selection.test.ts"],
       "runtime",
@@ -305,6 +310,16 @@ describe("test runtime prerequisites", () => {
     [
       "extension-telegram",
       ["**/polling-session.test.ts", "**/sticker-cache.selection.test.ts"],
+      undefined,
+    ],
+    [
+      "extension-codex-app-server-support",
+      [
+        "**/event-projector.verbose-hooks.test.ts",
+        "**/session-history.test.ts",
+        "**/settled-turn-finalizer.native.test.ts",
+        "**/transcript-mirror*.test.ts",
+      ],
       undefined,
     ],
   ] as const)("keeps %s selection scoped after excluding %s", (project, exclude, expected) => {
