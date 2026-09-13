@@ -239,6 +239,9 @@ function projectSource(
     return include ? [{ ...entry, targets }] : [];
   });
   const platforms = plan.inventory.platforms.filter((platform) => {
+    if (platform.id === "linux") {
+      return selection.publishOpenclawNpm && train === "stable" && !extended;
+    }
     if (platform.id === "windows") {
       return Boolean(selection.windowsNodeTag);
     }

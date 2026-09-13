@@ -760,6 +760,10 @@ describe("FRV publication source admission", () => {
         projection: { version },
       });
       const platforms = expectDefined(result.fact?.projection?.platforms, "source platforms");
+      expect(platforms).toContainEqual({
+        id: "linux",
+        source: ".github/workflows/linux-app-release-request.yml",
+      });
       if (windows) {
         expect(platforms).toContainEqual(expect.objectContaining({ id: "windows" }));
       } else {
@@ -903,6 +907,7 @@ describe("FRV publication source admission", () => {
       expect(result.fact?.projection?.platforms).toEqual(
         expect.arrayContaining([
           { id: "docker", source: ".github/workflows/docker-release.yml" },
+          { id: "linux", source: ".github/workflows/linux-app-release-request.yml" },
           { id: "vcr", source: ".github/workflows/vercel-container-registry-publish.yml" },
         ]),
       );
@@ -1079,6 +1084,15 @@ describe("FRV publication source admission", () => {
       expect(result.status, result.stderr).toBe(0);
       expect(result.fact?.projection?.version).toBe(version);
       expect(result.fact?.targetContextRef).toBe(targetContextRef);
+      const platforms = expectDefined(result.fact?.projection?.platforms, "source platforms");
+      if (version === "2026.9.9") {
+        expect(platforms).toContainEqual({
+          id: "linux",
+          source: ".github/workflows/linux-app-release-request.yml",
+        });
+      } else {
+        expect(platforms).not.toContainEqual(expect.objectContaining({ id: "linux" }));
+      }
       if (route === "extended-stable") {
         expect(result.fact?.projection?.packages).toEqual(
           expect.arrayContaining([{ name: "@openclaw/demo-plugin", version, targets: ["npm"] }]),
@@ -1120,6 +1134,9 @@ describe("FRV publication source admission", () => {
     expect(result.fact?.projection?.packages).toEqual([
       { name: "@openclaw/demo-plugin", version: "2026.9.9", targets: ["clawhub", "npm"] },
     ]);
+    expect(result.fact?.projection?.platforms).not.toContainEqual(
+      expect.objectContaining({ id: "linux" }),
+    );
     expect(result.fact?.coverage.rerun_group).toBe("ci");
   }, 30_000);
 

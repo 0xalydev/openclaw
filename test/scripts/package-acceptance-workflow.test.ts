@@ -6608,6 +6608,7 @@ wait_for_run openclaw-npm-release.yml 404 "$EXPECTED_SHA" "$STARTED_JOB" "$APPRO
     expect(workflowJob(RELEASE_PUBLISH_WORKFLOW, "finalize_github_release").needs).toEqual([
       "publish",
       "publish_docker",
+      "approve_github_release",
     ]);
     expect(nativeJob["continue-on-error"]).toBe(true);
     expect(androidJob["continue-on-error"]).toBe(true);
@@ -13829,7 +13830,7 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
     expect(createReleaseIndex).toBeGreaterThanOrEqual(0);
     expect(verifyReleaseIndex).toBeGreaterThan(createReleaseIndex);
     expect(appendProofIndex).toBeGreaterThan(verifyReleaseIndex);
-    expect(finalizeJob.needs).toEqual(["publish", "publish_docker"]);
+    expect(finalizeJob.needs).toEqual(["publish", "publish_docker", "approve_github_release"]);
     expect(finalizeJob.if).toContain("needs.publish_docker.result == 'success'");
     expect(finalizeRelease.run).toContain('gh release edit "${RELEASE_TAG}"');
   });
@@ -14017,7 +14018,7 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
       expect(workflow.on?.workflow_dispatch?.inputs?.[input]).toMatchObject({ required: false });
     }
     expect(publish.needs).toEqual(["resolve_release_target"]);
-    expect(finalize.needs).toEqual(["publish", "publish_docker"]);
+    expect(finalize.needs).toEqual(["publish", "publish_docker", "approve_github_release"]);
     expect(windows.needs).toEqual(["resolve_release_target", "finalize_github_release"]);
     expect(windows["continue-on-error"]).toBe(true);
     expect(windows.if).toContain("needs.finalize_github_release.result == 'success'");
