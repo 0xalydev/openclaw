@@ -2594,7 +2594,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
               .length,
             fourthAlignedWithSecond: Math.abs(boxes[3]!.left - boxes[1]!.left) <= 1,
             lastRowRightAligned: Math.abs(boxes[4]!.right - galleryBox.right) <= 1,
-            textBelow: textBox.top >= galleryBox.bottom + 7,
+            textGap: textBox.top - galleryBox.bottom,
             textRightAligned: Math.abs(textBox.right - galleryBox.right) <= 1,
             tileSize: boxes[0]!.width,
           };
@@ -2604,7 +2604,7 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
           firstRow: 3,
           fourthAlignedWithSecond: true,
           lastRowRightAligned: true,
-          textBelow: true,
+          textGap: 8,
           textRightAligned: true,
         });
         expect(geometry.tileSize).toBeCloseTo(128, 0);
@@ -5622,7 +5622,8 @@ for (const engine of [chromium, webkit]) {
               const source = `data:image/svg+xml,${encodeURIComponent(
                 `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="teal"/></svg>`,
               )}`;
-              await page.setContent(`<!doctype html><html><head><style>${readUiCss()}</style></head><body>
+              const prompt = `<div class="chat-text"><p>Review this image.</p><p>Keep paragraph spacing.</p></div>`;
+              await page.setContent(`<!doctype html><html style="--chat-text-size: 20px"><head><style>${readUiCss()}</style></head><body>
                 <main style="width: 740px; max-width: 100%; margin: auto">
                   ${["user", "user chat-group--peer", "assistant"]
                     .map(
@@ -5634,7 +5635,7 @@ for (const engine of [chromium, webkit]) {
                                 <img class="chat-message-image" src="${source}" width="${width}" height="${height}" alt="Large attachment" />
                               </button></span>
                             </div>
-                            <div class="chat-text">Review this image.</div>
+                            ${role === "assistant" ? prompt : `<div class="chat-message-avatar-anchor">${prompt}</div>`}
                           </div>
                         </div>
                       </div>`,
@@ -5659,6 +5660,9 @@ for (const engine of [chromium, webkit]) {
                   return {
                     frameGap: frame.right - image.right,
                     textGap: own ? text.right - image.right : image.left - text.left,
+                    mediaGap: text.top - image.bottom,
+                    user: group.classList.contains("user"),
+                    paragraphGap: box(".chat-text > p + p").top - box(".chat-text > p").bottom,
                     width: image.width,
                     height: image.height,
                     laneWidth: box(".chat-group-messages").width,
@@ -5668,6 +5672,8 @@ for (const engine of [chromium, webkit]) {
               for (const row of rows) {
                 expect(Math.abs(row.frameGap)).toBeLessThanOrEqual(1);
                 expect(Math.abs(row.textGap)).toBeLessThanOrEqual(1);
+                expect(row.mediaGap).toBe(row.user ? 8 : 20);
+                expect(row.paragraphGap).toBe(20);
                 expect(row.width).toBeLessThanOrEqual(Math.min(400, row.laneWidth) + 1);
                 expect(row.width / row.height).toBeCloseTo(width / height, 1);
               }
