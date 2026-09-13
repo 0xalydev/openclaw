@@ -70,6 +70,10 @@ export async function completeWithPreparedSimpleCompletionModel(
 }
 
 async function completePreparedModel(params: PreparedCompletionParams): Promise<AssistantMessage> {
+  // Direct SDK calls prepare transport hooks before entering the stream facade.
+  await import("./ai-transport-runtime-host.js");
+  params.assertCurrent?.();
+  params.options?.signal?.throwIfAborted();
   const runtime = getModelLlmRuntime(params.model);
   let completionModel =
     getModelCompletionTransport(params.model) ??
