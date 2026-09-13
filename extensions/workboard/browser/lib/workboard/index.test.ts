@@ -286,7 +286,10 @@ function saveDraft(client: WorkboardTestClient) {
 
 function moveCard(
   client: WorkboardTestClient,
-  options: Omit<Parameters<typeof moveWorkboardCard>[0], "host" | "client">,
+  options: Omit<
+    Extract<Parameters<typeof moveWorkboardCard>[0], { position: number }>,
+    "host" | "client"
+  >,
 ) {
   return moveWorkboardCard({ host, client, ...options });
 }
@@ -3493,6 +3496,275 @@ describe("workboard controller", () => {
     expect(client.request).toHaveBeenCalledWith("workboard.cards.start", { id: sampleCard.id });
     expect(getWorkboardState(host).error).toBe("provider unavailable");
   });
+
+  it.each([
+    {
+      name: "before another board in All",
+      boardFilter: "__all__",
+      beforeCardId: "b",
+      aPosition: 1000,
+      bPosition: 2000,
+      expected: 1500,
+    },
+    {
+      name: "at the end of All",
+      boardFilter: "__all__",
+      beforeCardId: null,
+      aPosition: 1000,
+      bPosition: 5000,
+      expected: 6000,
+    },
+    {
+      name: "within a specific board",
+      boardFilter: "a",
+      beforeCardId: "a",
+      aPosition: 2000,
+      bPosition: 1000,
+      expected: 999,
+    },
+  ])(
+    "places a dropped card $name without changing board membership",
+    async ({ boardFilter, beforeCardId, aPosition, bPosition, expected }) => {
+      const a = makeCard({
+        id: "a",
+        status: "todo",
+        position: aPosition,
+        metadata: { automation: { boardId: "a" } },
+      });
+      const b = makeCard({
+        id: "b",
+        status: "todo",
+        position: bPosition,
+        metadata: { automation: { boardId: "b" } },
+      });
+      const dragged = makeCard({
+        id: "dragged",
+        status: "todo",
+        position: 3000,
+        metadata: { automation: { boardId: "a" } },
+      });
+      state.cards = [a, b, dragged];
+      const moved = { ...dragged, position: expected };
+      const client = createClient({ "workboard.cards.move": { card: moved } });
+      await moveWorkboardCard({
+        host,
+        client,
+        cardId: dragged.id,
+        status: "todo",
+        beforeCardId,
+        boardFilter,
+      });
+      expect(client.request).toHaveBeenCalledTimes(1);
+      expect(client.request).toHaveBeenCalledWith("workboard.cards.move", {
+        id: dragged.id,
+        status: "todo",
+        position: expected,
+      });
+      expect(state.cards.find((card) => card.id === dragged.id)).toMatchObject({
+        position: expected,
+        metadata: { automation: { boardId: "a" } },
+      });
+      expect(state.cards.find((card) => card.id === a.id)).toEqual(a);
+      expect(state.cards.find((card) => card.id === b.id)).toEqual(b);
+      const visible = state.cards.filter(
+        (card) => boardFilter === "__all__" || card.metadata?.automation?.boardId === boardFilter,
+      );
+      if (beforeCardId) {
+        expect(visible.findIndex((card) => card.id === dragged.id)).toBe(
+          visible.findIndex((card) => card.id === beforeCardId) - 1,
+        );
+      } else {
+        expect(visible.at(-1)?.id).toBe(dragged.id);
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "reconciles a partially acknowledged drop with reload failure=%s",
+    async (reloadFails) => {
+      await loadWorkboard({
+        host,
+        client: createSequencedClient({
+          "workboard.cards.list": [new Error("move acknowledgment lost")],
+        }),
+      });
+      expect(state.error).toBe("move acknowledgment lost");
+      const a = makeCard({ id: "a", status: "todo", position: 0 });
+      const b = makeCard({ id: "b", status: "todo", position: 1 });
+      const c = makeCard({ id: "c", status: "todo", position: 2 });
+      const dragged = makeCard({ id: "dragged", status: "ready", position: 3000 });
+      state.cards = [a, b, c, dragged];
+      const movedC = { ...c, position: 3000 };
+      // The second move reached the server, but its acknowledgment was lost.
+      const canonicalCards = [a, { ...b, position: 2000 }, movedC, dragged];
+      const reload = createDeferred<{ cards: WorkboardCard[] }>();
+      const client = createSequencedClient({
+        "workboard.cards.update": [{ card: movedC }, new Error("move acknowledgment lost")],
+        "workboard.cards.list": [reload.promise],
+      });
+      const pending = moveWorkboardCard({
+        host,
+        client,
+        cardId: dragged.id,
+        status: "todo",
+        beforeCardId: b.id,
+        boardFilter: "__all__",
+      });
+      await waitForFast(() => expect(requestCalls(client, "workboard.cards.list")).toHaveLength(1));
+      expect(requestCalls(client, "workboard.cards.update").map(([, params]) => params)).toEqual([
+        { id: c.id, expectedUpdatedAt: c.updatedAt, patch: { position: 3000 } },
+        { id: b.id, expectedUpdatedAt: b.updatedAt, patch: { position: 2000 } },
+      ]);
+      expect(state.mutationReadiness).toBe("canonical_reload_required");
+      expect(state.busyCardIds.size).toBe(0);
+      await moveWorkboardCard({ host, client, cardId: a.id, status: "done", position: 0 });
+      expect(requestCalls(client, "workboard.cards.update")).toHaveLength(2);
+      if (reloadFails) {
+        reload.reject(new Error("canonical refresh unavailable"));
+      } else {
+        reload.resolve({ cards: canonicalCards });
+      }
+      await pending;
+      expect(state.error).toBe("move acknowledgment lost");
+      if (reloadFails) {
+        expect(state.mutationReadiness).toBe("canonical_reload_required");
+        expect(state.lastRefreshError).toBe("canonical refresh unavailable");
+        expect(state.cards.find((card) => card.id === c.id)).toEqual(movedC);
+      } else {
+        expect(state.mutationReadiness).toBe("ready");
+        expect(state.cards).toEqual(expect.arrayContaining(canonicalCards));
+        expect(state.cards.find((card) => card.id === dragged.id)?.status).toBe("ready");
+      }
+    },
+  );
+
+  it("preserves a peer completed by another client while a drop is making room", async () => {
+    const a = makeCard({ id: "a", status: "todo", position: 0 });
+    const b = makeCard({ id: "b", status: "todo", position: 1 });
+    const c = makeCard({ id: "c", status: "todo", position: 2 });
+    const dragged = makeCard({ id: "dragged", status: "ready", position: 3000 });
+    state.cards = [a, b, c, dragged];
+    const canonical = new Map(state.cards.map((card) => [card.id, card]));
+    const firstReply = createDeferred<{ card: WorkboardCard }>();
+    const client = createClient((method, params) => {
+      if (method === "workboard.cards.list") {
+        return { cards: [...canonical.values()] };
+      }
+      if (method !== "workboard.cards.move" && method !== "workboard.cards.update") {
+        return {};
+      }
+      const input = params as {
+        id: string;
+        status?: WorkboardCard["status"];
+        position?: number;
+        expectedUpdatedAt?: number;
+        patch?: Partial<WorkboardCard>;
+      };
+      const current = expectDefined(canonical.get(input.id), "stored card");
+      if (input.expectedUpdatedAt !== undefined && input.expectedUpdatedAt !== current.updatedAt) {
+        throw new GatewayRequestError({
+          code: "workboard_conflict",
+          message: "Card changed while moving.",
+          details: { type: "workboard_card_conflict", card: current },
+        });
+      }
+      const patch =
+        method === "workboard.cards.update"
+          ? input.patch
+          : { status: input.status, position: input.position };
+      const updated = { ...current, ...patch, updatedAt: current.updatedAt + 1 };
+      canonical.set(input.id, updated);
+      return input.id === c.id ? firstReply.promise : { card: updated };
+    });
+    const pending = moveWorkboardCard({
+      host,
+      client,
+      cardId: dragged.id,
+      status: "todo",
+      beforeCardId: b.id,
+      boardFilter: "__all__",
+    });
+    await waitForFast(() => expect(canonical.get(c.id)?.position).toBe(3000));
+    // Another client completes the next peer before the first response arrives.
+    const completed = { ...b, status: "done" as const, updatedAt: b.updatedAt + 1 };
+    canonical.set(b.id, completed);
+    firstReply.resolve({ card: expectDefined(canonical.get(c.id), "first moved peer") });
+    await pending;
+    expect(canonical.get(b.id)).toEqual(completed);
+    expect(state.cards.find((card) => card.id === b.id)).toEqual(completed);
+    expect(canonical.get(dragged.id)).toEqual(dragged);
+    expect(state.mutationReadiness).toBe("ready");
+    expect(state.error).toBe("Card changed while moving.");
+  });
+
+  it.each([false, true])(
+    "reconciles a single-request drop after a lost acknowledgment with reload failure=%s",
+    async (reloadFails) => {
+      const dragged = makeCard({ id: "dragged", status: "ready", position: 1000 });
+      const peer = makeCard({ id: "peer", status: "todo", position: 2000 });
+      state.cards = [dragged, peer];
+      state.detailCardId = dragged.id;
+      state.detailCommentBody = "  Keep this comment through recovery.  ";
+      const commentDraft = state.detailCommentBody;
+      let canonical = dragged;
+      const reload = createDeferred<{ cards: WorkboardCard[] }>();
+      const client = createClient((method) => {
+        if (method === "workboard.cards.move") {
+          canonical = { ...dragged, status: "todo", position: 1000 };
+          throw new Error("move acknowledgment lost");
+        }
+        if (method === "workboard.cards.list") {
+          return reload.promise;
+        }
+        if (method === "workboard.cards.comment") {
+          return { card: canonical };
+        }
+        return {};
+      });
+      const pending = moveWorkboardCard({
+        host,
+        client,
+        cardId: dragged.id,
+        status: "todo",
+        beforeCardId: peer.id,
+        boardFilter: "__all__",
+      });
+      await waitForFast(() => expect(requestCalls(client, "workboard.cards.list")).toHaveLength(1));
+      expect(requestCalls(client, "workboard.cards.move")).toHaveLength(1);
+      expect(requestCalls(client, "workboard.cards.update")).toHaveLength(0);
+      expect(canonical.status).toBe("todo");
+      expect(state.mutationReadiness).toBe("canonical_reload_required");
+      expect(state.busyCardIds.size).toBe(0);
+      await moveWorkboardCard({ host, client, cardId: peer.id, status: "done", position: 0 });
+      expect(requestCalls(client, "workboard.cards.move")).toHaveLength(1);
+      if (reloadFails) {
+        reload.reject(new Error("canonical refresh unavailable"));
+      } else {
+        reload.resolve({ cards: [canonical, peer] });
+      }
+      await pending;
+      expect(state.error).toBe("move acknowledgment lost");
+      expect(state.detailCommentBody).toBe(commentDraft);
+      if (reloadFails) {
+        expect(state.mutationReadiness).toBe("canonical_reload_required");
+        expect(state.lastRefreshError).toBe("canonical refresh unavailable");
+        expect(state.cards.find((card) => card.id === dragged.id)).toEqual(dragged);
+      } else {
+        expect(state.mutationReadiness).toBe("ready");
+        expect(state.cards.find((card) => card.id === dragged.id)).toEqual(canonical);
+        await addWorkboardCardComment({
+          host,
+          client,
+          cardId: dragged.id,
+          body: state.detailCommentBody,
+        });
+        expect(requestCalls(client, "workboard.cards.comment").map(([, params]) => params)).toEqual(
+          [{ id: dragged.id, body: commentDraft.trim() }],
+        );
+        expect(state.detailCommentBody).toBe("");
+      }
+    },
+  );
 
   it("moves cards through the plugin gateway method", async () => {
     const moved = makeCard({ status: "blocked", position: 2000 });
