@@ -23,6 +23,7 @@ import { createRuntimeDependencyOwnershipBuildPlugin } from "./scripts/lib/runti
 import { runtimeProcessBuildEntries } from "./scripts/lib/runtime-process-build-entries.mts";
 import {
   sharedRuntimeProcessBuildEntries,
+  shouldBundleStandaloneRuntimeDependency,
   standaloneRuntimeProcessBuildEntries,
 } from "./scripts/lib/runtime-process-core-build-entries.mts";
 import {
@@ -909,7 +910,11 @@ const configs: UserConfig[] = [
     {
       name: TSDOWN_UNIFIED_CONFIG_GROUP,
       entry: standaloneRuntimeProcessBuildEntries,
-      deps: unifiedDeps,
+      deps: {
+        ...unifiedDeps,
+        alwaysBundle: (id) =>
+          shouldAlwaysBundleDependency(id) || shouldBundleStandaloneRuntimeDependency(id),
+      },
       outputOptions: { codeSplitting: false },
       plugins: [createStateSchemaInlinePlugin()],
     },
