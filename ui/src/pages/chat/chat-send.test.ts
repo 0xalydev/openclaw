@@ -5279,26 +5279,33 @@ describe("handleSendChat", () => {
     expect(host.chatQueue).toEqual([expect.objectContaining({ id: item.id })]);
   });
 
-  it("claims one stored local command once across split panes", async () => {
-    executeSlashCommandMock.mockResolvedValue({ content: "Thinking level set." });
-    const request = makeRequestMock({
-      "chat.history": () => idleChatHistory(),
-    });
-    const client = clientWithRequest(request);
-    const item = createQueuedLocalCommand("shared-local-command", "/think high");
-    const firstHost = makeChatHost({ client, chatQueue: [item] });
-    const secondHost = makeChatHost({ client, chatQueue: [{ ...item }] });
-    const admission = captureChatOutboxAdmission(firstHost, firstHost.sessionKey);
-    expect(admitQueuedMessageForSession(firstHost, admission, item)).toBe(true);
+  it.each([false, true])(
+    "claims one local command across split panes (first hidden: %s)",
+    async (firstHidden) => {
+      executeSlashCommandMock.mockResolvedValue({ content: "Thinking level set." });
+      const request = makeRequestMock({
+        "chat.history": () => idleChatHistory(),
+      });
+      const client = clientWithRequest(request);
+      const item = createQueuedLocalCommand("shared-local-command", "/think high");
+      const firstHost = makeChatHost({ client, chatQueue: [item] });
+      const secondHost = makeChatHost({ client, chatQueue: [{ ...item }] });
+      const admission = captureChatOutboxAdmission(firstHost, firstHost.sessionKey);
+      expect(admitQueuedMessageForSession(firstHost, admission, item)).toBe(true);
+      if (firstHidden) {
+        firstHost.sessionKey = "agent:main:inactive";
+        secondHost.connectionEpoch = 7;
+      }
 
-    await Promise.all([
-      retryReconnectableQueuedChatSends(firstHost),
-      retryReconnectableQueuedChatSends(secondHost),
-    ]);
+      await Promise.all([
+        retryReconnectableQueuedChatSends(firstHost),
+        retryReconnectableQueuedChatSends(secondHost),
+      ]);
 
-    expect(executeSlashCommandMock).toHaveBeenCalledTimes(1);
-    expect(listStoredChatOutboxes(firstHost)).toStrictEqual([]);
-  });
+      expect(executeSlashCommandMock).toHaveBeenCalledTimes(1);
+      expect(listStoredChatOutboxes(firstHost)).toStrictEqual([]);
+    },
+  );
 
   it("keeps the visible split pane as lane owner while consecutive local commands replay", async () => {
     const firstCommand = createDeferred<{ content: string }>();
