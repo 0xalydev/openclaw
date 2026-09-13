@@ -2201,6 +2201,42 @@ describe("workboard controller", () => {
     expect(getWorkboardState(host).loaded).toBe(false);
   });
 
+  it("reconciles selection after live refresh without dropping filtered-out cards", async () => {
+    const removed = makeCard({ id: "removed" });
+    const archived = makeCard({ id: "archived" });
+    const retained = makeCard({ id: "retained", status: "done" });
+    const client = createSequencedClient({
+      "workboard.cards.list": [
+        listResult([removed, archived, retained]),
+        listResult([{ ...archived, metadata: { archivedAt: 20 } }, retained]),
+        listResult([]),
+      ],
+    });
+    await loadBoard(client);
+    state.selectedCardIds = new Set([removed.id, archived.id, retained.id]);
+    state.bulkDialog = {
+      kind: "delete",
+      cardIds: [removed.id, archived.id, retained.id],
+      observedCards: [removed, archived, retained],
+    };
+    state.statusFilter = new Set(["todo"]);
+    state.query = "no visible matches";
+
+    await refreshWorkboard({ host, client, source: "live" });
+    expect(state.selectedCardIds).toEqual(new Set([retained.id]));
+    expect(state.bulkDialog).toEqual({
+      kind: "delete",
+      cardIds: [retained.id],
+      observedCards: [removed, archived, retained],
+    });
+    expect(state.statusFilter).toEqual(new Set(["todo"]));
+    expect(state.query).toBe("no visible matches");
+
+    await refreshWorkboard({ host, client, source: "live" });
+    expect(state.selectedCardIds.size).toBe(0);
+    expect(state.bulkDialog).toBeNull();
+  });
+
   it("reloads a previously loaded board after lifecycle teardown", async () => {
     const reopenedCard = makeCard({ title: "Reopened board" });
     const client = createSequencedClient({
@@ -3782,6 +3818,30 @@ describe("workboard controller", () => {
     });
   });
 
+  it("removes an already-absent local card after an acknowledged delete", async () => {
+    state.cards = [sampleCard];
+    const client = createClient({ "workboard.cards.delete": { deleted: false } });
+    await expect(deleteCard(client, sampleCard.id)).resolves.toEqual({ deleted: false });
+    expect(state.cards).toEqual([]);
+  });
+
+  it.each([false, true])(
+    "applies cleanup revisions only to matching local observations (newer=%s)",
+    async (newer) => {
+      const parent = makeCard({ id: "parent" });
+      const child = makeCard({ id: "child", updatedAt: newer ? 30 : 10 });
+      state.cards = [parent, child];
+      const client = createClient({
+        "workboard.cards.delete": {
+          deleted: true,
+          referenceUpdates: [{ id: child.id, previousUpdatedAt: 10, updatedAt: 20 }],
+        },
+      });
+      await deleteCard(client, parent.id);
+      expect(state.cards).toEqual([{ ...child, updatedAt: newer ? 30 : 20 }]);
+    },
+  );
+
   it("removes stale dependency links from local cards after delete", async () => {
     const parent = makeCard({
       id: "parent-1",
@@ -3813,8 +3873,10 @@ describe("workboard controller", () => {
       return { card: { ...child, status: "running", metadata: undefined } };
     });
     getWorkboardState(host).cards = [parent, child];
+    state.selectedCardIds = new Set([parent.id, child.id]);
 
     await deleteCard(client, parent.id);
+    expect(state.selectedCardIds).toEqual(new Set([child.id]));
 
     const remaining = expectDefined(getWorkboardState(host).cards[0], "remaining child card");
     expect(remaining).toMatchObject({ id: child.id });
@@ -4748,8 +4810,10 @@ describe("workboard controller", () => {
       metadata: { archivedAt: 20 },
     });
     const client = createClient({ "workboard.cards.archive": { card: archived } });
+    state.selectedCardIds.add("card-1");
 
     await archiveCard(client, "card-1");
+    expect(state.selectedCardIds.size).toBe(0);
 
     expect(client.request).toHaveBeenCalledWith("workboard.cards.archive", {
       id: "card-1",

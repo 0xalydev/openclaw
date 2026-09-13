@@ -64,6 +64,18 @@ export type WorkboardHealthKey =
   | "missingProof"
   | "failedAttempts";
 
+export type WorkboardBulkDialog =
+  | { kind: "delete"; cardIds: string[]; observedCards: WorkboardCard[] }
+  | {
+      kind: "edit";
+      cardIds: string[];
+      observedCards: WorkboardCard[];
+      priority: WorkboardPriority | "";
+      agentId: string;
+      labels: string;
+      labelMode: "keep" | "add" | "replace" | "remove";
+    };
+
 export type WorkboardUiState = {
   loading: boolean;
   loaded: boolean;
@@ -122,6 +134,10 @@ export type WorkboardUiState = {
   detailCommentBody: string;
   detailCommentDrafts: Map<string, string>;
   busyCardIds: Set<string>;
+  selectedCardIds: Set<string>;
+  bulkDialog: WorkboardBulkDialog | null;
+  bulkSaving: boolean;
+  bulkResult: { completed: number; total: number } | null;
   draggedCardId: string | null;
   dragOverStatus: WorkboardStatus | null;
   dragBeforeCardId: string | null;

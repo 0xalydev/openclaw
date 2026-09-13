@@ -1,3 +1,4 @@
+import type { WorkboardCard } from "@openclaw/workboard-contract";
 import type { ControlUiMockGateway } from "./control-ui-e2e.ts";
 import type { buildWorkboardMocks } from "./control-ui-workboard-fixtures.ts";
 
@@ -16,6 +17,7 @@ export function installWorkboardBoardMock(seed: ReturnType<typeof buildWorkboard
       automation: { boardId: string };
       templateId?: string;
       archivedAt?: number;
+      links?: NonNullable<WorkboardCard["metadata"]>["links"];
       comments?: { id: string; body: string; createdAt: number }[];
     };
     notes?: string;
@@ -24,6 +26,22 @@ export function installWorkboardBoardMock(seed: ReturnType<typeof buildWorkboard
     events?: { id: string; kind: string; at: number; fromStatus?: string; toStatus?: string }[];
     completedAt?: number;
   };
+  function revisionError(card: MockCard | undefined, expectedUpdatedAt: unknown) {
+    if (
+      expectedUpdatedAt !== undefined &&
+      (typeof expectedUpdatedAt !== "number" || !Number.isFinite(expectedUpdatedAt))
+    ) {
+      return { code: "workboard_error", message: "expectedUpdatedAt must be a finite number." };
+    }
+    if (card && expectedUpdatedAt !== undefined && expectedUpdatedAt !== card.updatedAt) {
+      return {
+        code: "workboard_conflict",
+        message: "Card changed while you were editing. Review the latest values and retry.",
+        details: { type: "workboard_card_conflict", card },
+      };
+    }
+    return undefined;
+  }
   const workboardCards = new Map<string, MockCard>(seed.cards.map((card) => [card.id, card]));
   const tasks = new Map(seed.tasks.map((task) => [task.id, task]));
   gateway.setRequestHandler("tasks.list", ({ params, respond }) => {
@@ -147,18 +165,9 @@ export function installWorkboardBoardMock(seed: ReturnType<typeof buildWorkboard
         });
         return;
       }
-      if (
-        existing &&
-        input.expectedUpdatedAt !== undefined &&
-        input.expectedUpdatedAt !== existing.updatedAt
-      ) {
-        respond({
-          __mockError: {
-            code: "workboard_conflict",
-            message: "Card changed while you were editing. Review the latest values and retry.",
-            details: { type: "workboard_card_conflict", card: existing },
-          },
-        });
+      const conflict = revisionError(existing, input.expectedUpdatedAt);
+      if (conflict) {
+        respond({ __mockError: conflict });
         return;
       }
       const now = existing ? Math.max(Date.now(), existing.updatedAt + 1) : Date.now();
@@ -244,13 +253,18 @@ export function installWorkboardBoardMock(seed: ReturnType<typeof buildWorkboard
     emit("plugin.workboard.changed", { epoch: "workboard-mock", revision });
   });
   gateway.setRequestHandler("workboard.cards.archive", ({ params, respond, emit }) => {
-    const input = params as { id: string; archived?: boolean };
+    const input = params as { id: string; expectedUpdatedAt?: number; archived?: boolean };
     const card = workboardCards.get(input.id);
     if (!card) {
       respond({ __mockError: { code: "INVALID_REQUEST", message: "Unknown card." } });
       return;
     }
-    const now = Date.now();
+    const conflict = revisionError(card, input.expectedUpdatedAt);
+    if (conflict) {
+      respond({ __mockError: conflict });
+      return;
+    }
+    const now = Math.max(Date.now(), card.updatedAt + 1);
     const archived = input.archived !== false;
     const updated: MockCard = {
       ...card,
@@ -266,18 +280,51 @@ export function installWorkboardBoardMock(seed: ReturnType<typeof buildWorkboard
     emit("plugin.workboard.changed", { epoch: "workboard-mock", revision });
   });
   gateway.setRequestHandler("workboard.cards.delete", ({ params, respond, emit }) => {
-    const input = params as { id: string };
+    const input = params as { id: string; expectedUpdatedAt?: number };
+    const conflict = revisionError(workboardCards.get(input.id), input.expectedUpdatedAt);
+    if (conflict) {
+      respond({ __mockError: conflict });
+      return;
+    }
     const deleted = workboardCards.delete(input.id);
-    respond({ deleted });
+    const referenceUpdates: Array<{ id: string; previousUpdatedAt: number; updatedAt: number }> =
+      [];
+    if (deleted) {
+      for (const card of workboardCards.values()) {
+        const { links, ...metadata } = card.metadata;
+        if (!links?.some((link) => link.targetCardId === input.id)) {
+          continue;
+        }
+        const updatedAt = Math.max(Date.now(), card.updatedAt + 1);
+        const remainingLinks = links.filter((link) => link.targetCardId !== input.id);
+        workboardCards.set(card.id, {
+          ...card,
+          updatedAt,
+          metadata: { ...metadata, ...(remainingLinks.length ? { links: remainingLinks } : {}) },
+        });
+        referenceUpdates.push({ id: card.id, previousUpdatedAt: card.updatedAt, updatedAt });
+      }
+    }
+    respond({ deleted, ...(referenceUpdates.length ? { referenceUpdates } : {}) });
     if (deleted) {
       emit("plugin.workboard.changed", { epoch: "workboard-mock", revision: ++revision });
     }
   });
   gateway.setRequestHandler("workboard.cards.move", ({ params, respond, emit }) => {
-    const input = params as { id: string; status: string; position?: number };
+    const input = params as {
+      id: string;
+      expectedUpdatedAt?: number;
+      status: string;
+      position?: number;
+    };
     const card = workboardCards.get(input.id);
     if (!card || !statuses.includes(input.status)) {
       respond({ __mockError: { code: "INVALID_REQUEST", message: "Unknown card or status." } });
+      return;
+    }
+    const conflict = revisionError(card, input.expectedUpdatedAt);
+    if (conflict) {
+      respond({ __mockError: conflict });
       return;
     }
     const now = Math.max(Date.now(), card.updatedAt + 1);

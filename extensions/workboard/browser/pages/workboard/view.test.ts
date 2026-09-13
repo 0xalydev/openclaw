@@ -10,7 +10,7 @@ import type {
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
-import { nextWorkboardCardPosition } from "../../lib/workboard/card-state.ts";
+import { nextWorkboardCardPosition, setWorkboardCards } from "../../lib/workboard/card-state.ts";
 import { getWorkboardState, stopWorkboardLifecycleRefresh } from "../../lib/workboard/index.ts";
 import {
   createGatewaySession,
@@ -261,6 +261,529 @@ describe("nextWorkboardCardPosition", () => {
 });
 
 describe("renderWorkboard", () => {
+  it.each([
+    { path: "quick", agentId: "" },
+    { path: "quick", agentId: "main" },
+    { path: "edit", agentId: "" },
+    { path: "edit", agentId: "main" },
+  ])(
+    "bulk $path preserves raw assignment '$agentId' independently of Keep unchanged",
+    async ({ path, agentId }) => {
+      const card = createWorkboardCard({ agentId: "writer" });
+      const saved = { ...card, agentId, updatedAt: card.updatedAt + 1 };
+      const { request } = createWorkboardTestClient({
+        "workboard.cards.update": { card: saved },
+      });
+      const { state, container, renderView } = createWorkboardView({
+        client: { request, addEventListener: () => () => undefined },
+        agentsList: {
+          defaultId: "main",
+          agents: [
+            { id: "main", name: "Molty" },
+            { id: "writer", name: "Writer" },
+          ],
+        },
+      });
+      state.cards = [card];
+      state.selectedCardIds.add(card.id);
+      renderView();
+      if (path === "edit") {
+        expectDefined(buttonByLabel(container, "Edit properties"), "bulk edit").click();
+        renderView();
+        expect(
+          expectDefined(buttonByLabel(container, "Apply changes"), "apply changes").disabled,
+        ).toBe(true);
+      }
+      const scope = expectDefined(
+        container.querySelector(
+          path === "edit" ? ".workboard-bulk-dialog" : ".workboard-selection",
+        ),
+        "bulk controls",
+      );
+      const picker = expectDefined(
+        [
+          ...scope.querySelectorAll<HTMLElement & ControlUiSelectPickerProps>(
+            "[data-test-select-picker]",
+          ),
+        ].find((item) => item.accessibleLabel === (path === "edit" ? "Agent" : "Assign agent…")),
+        "bulk agent picker",
+      );
+      expect(picker.options.find((option) => option.value === "")?.description).toBe("Default");
+      expect(picker.options.some((option) => option.value === "main")).toBe(true);
+      if (path === "edit") {
+        const keep = expectDefined(
+          picker.options.find((option) => option.label === "Keep unchanged"),
+          "keep assignment",
+        );
+        picker.onSelect("");
+        renderView();
+        expect(
+          expectDefined(buttonByLabel(container, "Apply changes"), "apply changes").disabled,
+        ).toBe(false);
+        picker.onSelect(keep.value);
+        renderView();
+        expect(
+          expectDefined(buttonByLabel(container, "Apply changes"), "apply changes").disabled,
+        ).toBe(true);
+        expect(request).not.toHaveBeenCalled();
+      }
+      picker.onSelect(agentId);
+      if (path === "edit") {
+        renderView();
+        expectDefined(buttonByLabel(container, "Apply changes"), "apply changes").click();
+      }
+      await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+      expect(request).toHaveBeenCalledWith("workboard.cards.update", {
+        id: card.id,
+        expectedUpdatedAt: card.updatedAt,
+        patch: { agentId },
+      });
+      expect(state.cards[0]?.agentId).toBe(agentId);
+      expect(state.selectedCardIds.size).toBe(0);
+    },
+  );
+
+  it("retries only pending bulk edits after the second card fails", async () => {
+    const first = createWorkboardCard({ id: "first", agentId: "writer" });
+    const second = createWorkboardCard({ id: "second", agentId: "writer", position: 2000 });
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        card: { ...first, agentId: "main", updatedAt: first.updatedAt + 1 },
+      })
+      .mockRejectedValueOnce(new Error("Second card update rejected"))
+      .mockResolvedValueOnce({
+        card: { ...second, agentId: "main", updatedAt: second.updatedAt + 1 },
+      });
+    const { state, container, renderView } = createWorkboardView({
+      client: { request, addEventListener: () => () => undefined },
+      connected: true,
+      canWrite: true,
+      agentsList: { defaultId: "main", agents: [{ id: "main" }, { id: "writer" }] },
+    });
+    state.cards = [first, second];
+    state.selectedCardIds = new Set([first.id, second.id]);
+    renderView();
+    expectDefined(buttonByLabel(container, "Edit properties"), "bulk edit").click();
+    renderView();
+    const picker = expectDefined(
+      container.querySelector<HTMLElement & ControlUiSelectPickerProps>(
+        ".workboard-bulk-dialog [data-test-select-picker]",
+      ),
+      "bulk agent picker",
+    );
+    expect(picker.accessibleLabel).toBe("Agent");
+    picker.onSelect("main");
+    renderView();
+    expectDefined(buttonByLabel(container, "Apply changes"), "apply changes").click();
+    await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(state.cards.find((card) => card.id === first.id)?.agentId).toBe("main");
+    expect(state.cards.find((card) => card.id === second.id)?.agentId).toBe("writer");
+    expect(state.selectedCardIds).toEqual(new Set([second.id]));
+    expect(state.bulkDialog?.cardIds).toEqual([second.id]);
+    expect(state.bulkResult).toEqual({ completed: 1, total: 2 });
+    renderView();
+    await waitForFast(() => {
+      const errorToast = container.querySelector("openclaw-workboard-toast:not([hidden])");
+      expect(errorToast?.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain(
+        "Applied to 1 of 2 cards. Second card update rejected",
+      );
+    });
+    expectDefined(buttonByLabel(container, "Apply changes"), "retry pending edit").click();
+    await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+    expect(request.mock.calls).toEqual([
+      [
+        "workboard.cards.update",
+        { id: first.id, expectedUpdatedAt: first.updatedAt, patch: { agentId: "main" } },
+      ],
+      [
+        "workboard.cards.update",
+        { id: second.id, expectedUpdatedAt: second.updatedAt, patch: { agentId: "main" } },
+      ],
+      [
+        "workboard.cards.update",
+        { id: second.id, expectedUpdatedAt: second.updatedAt, patch: { agentId: "main" } },
+      ],
+    ]);
+    expect(state.cards.every((card) => card.agentId === "main")).toBe(true);
+    expect(state.selectedCardIds.size).toBe(0);
+    expect(state.bulkDialog).toBeNull();
+    expect(state.bulkResult).toEqual({ completed: 1, total: 1 });
+    expect(state.error).toBeNull();
+  });
+
+  it.each(["write revocation", "disconnect", "activation disposal"] as const)(
+    "stops a bulk assignment after live host %s while the first write is pending",
+    async (change) => {
+      const first = createWorkboardCard({ id: "first", agentId: "writer" });
+      const second = createWorkboardCard({ id: "second", agentId: "writer", position: 2000 });
+      const firstWrite = createDeferred<{ card: typeof first }>();
+      const request = vi
+        .fn()
+        .mockImplementationOnce(() => firstWrite.promise)
+        .mockResolvedValue({ card: { ...second, agentId: "main" } });
+      const { state, container, renderView } = createWorkboardView({
+        client: { request, addEventListener: () => () => undefined },
+        connected: true,
+        canWrite: true,
+        agentsList: { defaultId: "main", agents: [{ id: "main" }, { id: "writer" }] },
+      });
+      state.cards = [first, second];
+      state.selectedCardIds = new Set([first.id, second.id]);
+      renderView();
+      const picker = expectDefined(
+        [
+          ...container.querySelectorAll<HTMLElement & ControlUiSelectPickerProps>(
+            ".workboard-selection [data-test-select-picker]",
+          ),
+        ].find((item) => item.accessibleLabel === "Assign agent…"),
+        "bulk assignment",
+      );
+      picker.onSelect("main");
+      await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+      expect(state.bulkSaving).toBe(true);
+      const connection = workboardTestHost().connection;
+      if (change === "disconnect") {
+        connection.connected = false;
+      } else if (change === "write revocation") {
+        connection.canWrite = false;
+      } else {
+        workboardTestHost().dispose();
+      }
+      firstWrite.resolve({ card: { ...first, agentId: "main", updatedAt: first.updatedAt + 1 } });
+      await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith("workboard.cards.update", {
+        id: first.id,
+        expectedUpdatedAt: first.updatedAt,
+        patch: { agentId: "main" },
+      });
+      expect(state.cards.find((card) => card.id === first.id)?.agentId).toBe("main");
+      expect(state.cards.find((card) => card.id === second.id)?.agentId).toBe("writer");
+      expect(state.selectedCardIds).toEqual(new Set([second.id]));
+      expect(state.bulkResult).toEqual({ completed: 1, total: 2 });
+      expect(state.error).toContain("Applied to 1 of 2 cards.");
+    },
+  );
+
+  it.each(["board", "agent"] as const)(
+    "clears selection and stops pending work on %s scope changes but retains query/status selection",
+    async (scope) => {
+      const first = createWorkboardCard({
+        id: "first",
+        metadata: { automation: { boardId: "one" } },
+        agentId: "writer",
+      });
+      const second = createWorkboardCard({
+        id: "second",
+        metadata: { automation: { boardId: "one" } },
+        agentId: "writer",
+      });
+      const pending = createDeferred<{ card: typeof first }>();
+      const request = vi.fn().mockImplementation(() => pending.promise);
+      const { state, container, renderView } = createWorkboardView({
+        client: { request, addEventListener: () => () => undefined },
+        canWrite: true,
+        agentsList: { defaultId: "main", agents: [{ id: "main" }, { id: "writer" }] },
+      });
+      state.cards = [first, second];
+      state.boardFilter = "one";
+      state.selectedCardIds = new Set([first.id, second.id]);
+      renderView();
+      state.query = "unmatched";
+      state.statusFilter = new Set(["done"]);
+      renderView();
+      expect(state.selectedCardIds).toEqual(new Set([first.id, second.id]));
+      const assign = expectDefined(
+        [
+          ...container.querySelectorAll<HTMLElement & ControlUiSelectPickerProps>(
+            ".workboard-selection [data-test-select-picker]",
+          ),
+        ].find((picker) => picker.accessibleLabel === "Assign agent…"),
+        "assignment",
+      );
+      assign.onSelect("main");
+      await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+      if (scope === "board") {
+        state.boardFilter = "two";
+        renderView();
+      } else {
+        renderView({ scopeAgentId: "main" });
+      }
+      expect(state.selectedCardIds.size).toBe(0);
+      expect(state.bulkDialog).toBeNull();
+      // Returning to the original scope cannot revive the pending batch.
+      state.boardFilter = "one";
+      renderView();
+      pending.resolve({ card: { ...first, agentId: "main", updatedAt: first.updatedAt + 1 } });
+      await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(state.cards.find((card) => card.id === second.id)?.agentId).toBe("writer");
+      expect(state.selectedCardIds.size).toBe(0);
+    },
+  );
+
+  it.each(["board", "agent", "local agent"] as const)(
+    "drops a live card outside the selected %s scope before actions and during pending work",
+    async (scope) => {
+      const first = createWorkboardCard({
+        id: "first",
+        agentId: "writer",
+        metadata: { automation: { boardId: "one" } },
+      });
+      const second = createWorkboardCard({ ...first, id: "second", position: 2000 });
+      const outside =
+        scope === "board"
+          ? {
+              ...second,
+              metadata: { automation: { boardId: "two" } },
+              updatedAt: second.updatedAt + 1,
+            }
+          : { ...second, agentId: "main", updatedAt: second.updatedAt + 1 };
+      const pending = createDeferred<{ card: typeof first }>();
+      const request = vi.fn().mockImplementation(() => pending.promise);
+      const { state, container, renderView } = createWorkboardView({
+        client: { request, addEventListener: () => () => undefined },
+        canWrite: true,
+        scopeAgentId: scope === "agent" ? "writer" : undefined,
+        agentsList: { defaultId: "main", agents: [{ id: "main" }, { id: "writer" }] },
+      });
+      state.boardFilter = "one";
+      state.agentFilter = scope === "local agent" ? "writer" : "all";
+      state.cards = [first, second];
+      state.selectedCardIds = new Set([first.id, second.id]);
+      renderView();
+      state.query = "unmatched";
+      state.statusFilter = new Set(["done"]);
+      setWorkboardCards(state, [first, outside]);
+      renderView();
+      expect(state.selectedCardIds).toEqual(new Set([first.id]));
+      // Keep a second eligible selection, then move it remotely while the first request is pending.
+      setWorkboardCards(state, [first, second]);
+      state.selectedCardIds.add(second.id);
+      renderView();
+      expectDefined(buttonByLabel(container, "Archive"), "archive selected cards").click();
+      await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+      setWorkboardCards(state, [first, outside]);
+      pending.resolve({
+        card: { ...first, metadata: { ...first.metadata, archivedAt: first.updatedAt + 1 } },
+      });
+      await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(state.cards.find((card) => card.id === second.id)).toEqual(outside);
+      expect(state.selectedCardIds.size).toBe(0);
+    },
+  );
+
+  it.each(["none", "before cleanup", "after cleanup"] as const)(
+    "deletes linked selections without adopting unrelated edits: %s",
+    async (concurrentEdit) => {
+      const parent = createWorkboardCard({ id: "parent" });
+      const child = createWorkboardCard({
+        id: "child",
+        position: 2000,
+        metadata: {
+          links: [{ id: "link", type: "parent", targetCardId: parent.id, createdAt: 1 }],
+        },
+      });
+      const previousUpdatedAt = child.updatedAt + (concurrentEdit === "before cleanup" ? 1 : 0);
+      const cleanupUpdatedAt = previousUpdatedAt + 1;
+      const latest = {
+        ...child,
+        metadata: undefined,
+        updatedAt: cleanupUpdatedAt + (concurrentEdit === "after cleanup" ? 1 : 0),
+        title: concurrentEdit === "none" ? child.title : "Edited by another client",
+      };
+      const request = vi.fn().mockImplementation(async (_method, params) => {
+        if (params.id === parent.id) {
+          if (concurrentEdit !== "none") {
+            setWorkboardCards(state, [
+              parent,
+              {
+                ...latest,
+                updatedAt:
+                  concurrentEdit === "before cleanup" ? previousUpdatedAt : latest.updatedAt,
+              },
+            ]);
+          }
+          return {
+            deleted: true,
+            referenceUpdates: [{ id: child.id, previousUpdatedAt, updatedAt: cleanupUpdatedAt }],
+          };
+        }
+        if (params.expectedUpdatedAt !== latest.updatedAt) {
+          throw new GatewayProtocolRequestError({
+            code: "workboard_conflict",
+            message: "Card changed. Review and retry.",
+            details: { type: "workboard_card_conflict", card: latest },
+          });
+        }
+        return { deleted: true };
+      });
+      const { state, container, renderView } = createWorkboardView({
+        client: { request, addEventListener: () => () => undefined },
+        canWrite: true,
+      });
+      state.cards = [parent, child];
+      state.selectedCardIds = new Set([parent.id, child.id]);
+      renderView();
+      expectDefined(
+        container.querySelector<HTMLButtonElement>(".workboard-selection__delete"),
+        "delete selected",
+      ).click();
+      renderView();
+      expectDefined(
+        container.querySelector<HTMLButtonElement>('.workboard-bulk-dialog button[type="submit"]'),
+        "confirm delete",
+      ).click();
+      await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenNthCalledWith(2, "workboard.cards.delete", {
+        id: child.id,
+        expectedUpdatedAt: concurrentEdit === "before cleanup" ? child.updatedAt : cleanupUpdatedAt,
+      });
+      if (concurrentEdit === "none") {
+        expect(state.cards).toEqual([]);
+        expect(state.selectedCardIds.size).toBe(0);
+        expect(state.error).toBeNull();
+      } else {
+        expect(state.cards).toEqual([latest]);
+        expect(state.selectedCardIds).toEqual(new Set([child.id]));
+        expect(state.error).toContain("Card changed. Review and retry.");
+      }
+    },
+  );
+
+  it.each(["move", "archive", "delete"] as const)(
+    "stops bulk %s on a newer card revision and retains it for retry",
+    async (action) => {
+      const first = createWorkboardCard({ id: "first" });
+      const second = createWorkboardCard({ id: "second", position: 2000 });
+      const newer = { ...second, title: "Changed elsewhere", updatedAt: second.updatedAt + 10 };
+      const pending = createDeferred<unknown>();
+      const request = vi
+        .fn()
+        .mockImplementationOnce(() => pending.promise)
+        .mockImplementation(async () => {
+          throw new GatewayProtocolRequestError({
+            code: "workboard_conflict",
+            message: "Card changed. Review and retry.",
+            details: { type: "workboard_card_conflict", card: newer },
+          });
+        });
+      const { state, container, renderView } = createWorkboardView({
+        client: { request, addEventListener: () => () => undefined },
+        canWrite: true,
+      });
+      state.cards = [first, second];
+      state.selectedCardIds = new Set([first.id, second.id]);
+      renderView();
+      if (action === "move") {
+        expectDefined(
+          container.querySelector<HTMLElement & ControlUiSelectPickerProps>(
+            ".workboard-selection [data-test-select-picker]",
+          ),
+          "bulk move",
+        ).onSelect("done");
+      } else {
+        expectDefined(
+          buttonByLabel(container, action === "archive" ? "Archive" : "Delete"),
+          "bulk action",
+        ).click();
+        if (action === "delete") {
+          setWorkboardCards(state, [first, newer]);
+          renderView();
+          expectDefined(
+            container.querySelector<HTMLButtonElement>(
+              '.workboard-bulk-dialog button[type="submit"]',
+            ),
+            "confirm delete",
+          ).click();
+        }
+      }
+      await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+      // Refresh while processing the first card must not replace the observed revision.
+      setWorkboardCards(state, [first, newer]);
+      pending.resolve(
+        action === "delete"
+          ? { deleted: true }
+          : {
+              card: {
+                ...first,
+                status: action === "move" ? "done" : first.status,
+                metadata:
+                  action === "archive" ? { archivedAt: first.updatedAt + 1 } : first.metadata,
+              },
+            },
+      );
+      await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenNthCalledWith(
+        2,
+        `workboard.cards.${action}`,
+        expect.objectContaining({
+          id: second.id,
+          expectedUpdatedAt: second.updatedAt,
+        }),
+      );
+      expect(state.cards.find((card) => card.id === second.id)).toEqual(newer);
+      expect(state.selectedCardIds).toEqual(new Set([second.id]));
+      expect(state.error).toContain("Card changed. Review and retry.");
+    },
+  );
+
+  it.each(["before confirmation", "during the first delete"] as const)(
+    "does not bulk-delete a card archived %s",
+    async (timing) => {
+      const first = createWorkboardCard({ id: "first" });
+      const second = createWorkboardCard({ id: "second", position: 2000 });
+      const archived = { ...second, metadata: { archivedAt: second.updatedAt + 1 } };
+      const firstWrite = createDeferred<{ deleted: boolean }>();
+      const request = vi
+        .fn()
+        .mockImplementationOnce(() => firstWrite.promise)
+        .mockResolvedValue({ deleted: true });
+      const { state, container, renderView } = createWorkboardView({
+        client: { request, addEventListener: () => () => undefined },
+        connected: true,
+        canWrite: true,
+      });
+      state.cards = [first, second];
+      state.selectedCardIds = new Set([first.id, second.id]);
+      renderView();
+      expectDefined(
+        container.querySelector<HTMLButtonElement>(".workboard-selection__delete"),
+        "bulk delete",
+      ).click();
+      renderView();
+      expect(state.bulkDialog?.cardIds).toEqual([first.id, second.id]);
+      if (timing === "before confirmation") {
+        setWorkboardCards(state, [first, archived]);
+        renderView();
+      }
+      expectDefined(
+        container.querySelector<HTMLButtonElement>('.workboard-bulk-dialog button[type="submit"]'),
+        "confirm delete",
+      ).click();
+      await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+      if (timing === "during the first delete") {
+        setWorkboardCards(state, [first, archived]);
+      }
+      firstWrite.resolve({ deleted: true });
+      await vi.waitFor(() => expect(state.bulkSaving).toBe(false));
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request).toHaveBeenCalledWith("workboard.cards.delete", {
+        id: first.id,
+        expectedUpdatedAt: first.updatedAt,
+      });
+      expect(state.cards).toEqual([archived]);
+      expect(state.selectedCardIds.size).toBe(0);
+      expect(state.bulkDialog).toBeNull();
+    },
+  );
+
   it("mounts a session summary only when a linked Session tab is selected", () => {
     const { state, container, renderView } = createWorkboardView();
     state.detailCardId = "card-1";
@@ -379,7 +902,7 @@ describe("renderWorkboard", () => {
     expect(container.querySelector<HTMLButtonElement>(".workboard-refresh")?.disabled).toBe(true);
   });
 
-  it.each(["details", "edit", "discard"] as const)(
+  it.each(["details", "edit", "discard", "bulk"] as const)(
     "preserves error visibility and dismissal through %s dialogs",
     async (dialog) => {
       const { state, container, renderView } = createWorkboardView();
@@ -387,6 +910,8 @@ describe("renderWorkboard", () => {
       state.cards = [card];
       if (dialog === "details") {
         state.detailCardId = card.id;
+      } else if (dialog === "bulk") {
+        state.bulkDialog = { kind: "delete", cardIds: [card.id], observedCards: [card] };
       } else {
         state.draftOpen = true;
         state.editingCardId = card.id;
@@ -422,6 +947,7 @@ describe("renderWorkboard", () => {
         expect(dialogToast.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
       });
       state.detailCardId = null;
+      state.bulkDialog = null;
       state.draftOpen = dialog === "discard";
       state.draftDiscardOpen = false;
       renderView({ pageError });
@@ -1437,6 +1963,16 @@ describe("renderWorkboard", () => {
       container.querySelector('section[aria-label="Todo, 1"]'),
       "Todo group",
     );
+    const actions = expectDefined(
+      group.querySelector<HTMLButtonElement>("button[popovertarget]"),
+      "group actions",
+    );
+    actions.click();
+    expect(group.querySelector("h2 button")?.getAttribute("aria-expanded")).toBe("false");
+    expectDefined(buttonByText(group, "Select all"), "select group cards").click();
+    renderView();
+    expect(state.selectedCardIds).toEqual(new Set(["todo-card"]));
+    expect(group.querySelector('[role="listitem"]')).toBeNull();
     expectDefined(buttonByLabel(group, "New card in Todo"), "new card in group").click();
     renderView();
     expect(state.draftOpen).toBe(true);
@@ -1584,6 +2120,55 @@ describe("renderWorkboard", () => {
         ),
       );
       expect(onOpenSession).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["board", "list"] as const)(
+    "keeps %s keyboard selection intact when opening an action from the card menu",
+    (viewMode) => {
+      const { state, container, renderView } = createWorkboardView({ canWrite: true });
+      state.viewMode = viewMode;
+      state.cards = [
+        createWorkboardCard({ id: "first", title: "First row" }),
+        createWorkboardCard({ id: "second", title: "Second row" }),
+      ];
+      renderView();
+      const rows = container.querySelectorAll<HTMLElement>(".workboard-card");
+      const first = expectDefined(rows[0], "first list row");
+      const second = expectDefined(rows[1], "second list row");
+      expect(first.getAttribute("aria-pressed")).toBeNull();
+      expect(second.getAttribute("aria-pressed")).toBeNull();
+      first.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      renderView();
+      expect(first.getAttribute("aria-pressed")).toBe("true");
+      expect(second.getAttribute("aria-pressed")).toBe("false");
+      expect(first.getAttribute("aria-haspopup")).toBeNull();
+      expect(state.detailCardId).toBeNull();
+      second.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }),
+      );
+      renderView();
+      expect(state.selectedCardIds).toEqual(new Set(["first", "second"]));
+      expect(second.getAttribute("aria-pressed")).toBe("true");
+      expectDefined(
+        second.querySelector<HTMLButtonElement>(".workboard-card__menu-trigger"),
+        "row menu",
+      ).click();
+      expect(state.selectedCardIds).toEqual(new Set(["first", "second"]));
+      expect(state.detailCardId).toBeNull();
+      expectDefined(buttonByLabel(second, "Edit card"), "row edit action").click();
+      renderView();
+      expect(state.draftOpen).toBe(true);
+      expect(state.editingCardId).toBe("second");
+      expect(state.detailCardId).toBeNull();
+      expect(state.selectedCardIds).toEqual(new Set(["first", "second"]));
     },
   );
 
