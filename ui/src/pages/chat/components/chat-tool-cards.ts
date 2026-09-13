@@ -89,6 +89,10 @@ export function shouldToggleSelectableDisclosure(event: MouseEvent): boolean {
 }
 
 export function renderToolIcon(name: string, pluginIcon?: PluginToolIcon) {
+  // Memory activity keeps its semantic glyph instead of the plugin's app tile.
+  if (name === "memory") {
+    return icons.memory;
+  }
   if (pluginIcon) {
     return html`<img
       src=${pluginIcon.url}
