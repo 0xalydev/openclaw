@@ -235,6 +235,7 @@ vi.mock("../../../infra/agent-events.js", () => ({
 }));
 vi.mock("../../../infra/agent-run-registry.js", () => ({
   getAgentRunContext: mocks.getAgentRunContext,
+  hasLiveAgentRunContext: vi.fn(() => false),
 }));
 
 vi.mock("../../../config/config.js", () => {
