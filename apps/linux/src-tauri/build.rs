@@ -4,6 +4,7 @@ fn main() {
         "bootstrap",
         "build_info",
         "check_for_updates",
+        "close_connection_settings",
         "connect_discovered_gateway",
         "connect_remote_gateway",
         "discover_gateways",

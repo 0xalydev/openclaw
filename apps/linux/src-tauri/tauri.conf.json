@@ -48,6 +48,7 @@
             "allow-bootstrap",
             "allow-build-info",
             "allow-check-for-updates",
+            "allow-close-connection-settings",
             "allow-connect-discovered-gateway",
             "allow-connect-remote-gateway",
             "allow-discover-gateways",
