@@ -205,6 +205,8 @@ describe("production lint suppressions", () => {
         // Keep explicit removal markers beside temporary upstream Bun workarounds.
         "scripts/e2e/parallels/host-command.ts|no-warning-comments|1",
         "scripts/lib/plain-gh.mjs|no-warning-comments|1",
+        // IPC worker, action, and matcher failures retain their original rejection values.
+        "scripts/lib/sqlite-reliability-process.ts|typescript/prefer-promise-reject-errors|1",
         "src/agents/agent-bundle-mcp-runtime.ts|unicorn/prefer-add-event-listener|1",
         "src/agents/agent-tools.abort.ts|typescript/prefer-promise-reject-errors|1",
         // Cleanup stays in AggregateError.errors; the initiating failure remains cause for classification and remediation.
