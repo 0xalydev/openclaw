@@ -25,6 +25,7 @@ import type {
   AssistantMessage,
   Model,
   ModelThinkingLevel,
+  SimpleStreamOptions,
   ThinkingLevel as SimpleCompletionThinkingLevel,
 } from "../llm/types.js";
 import type { ResolvedProviderAuth } from "./model-auth.js";
@@ -35,6 +36,7 @@ type SimpleCompletionModelOptions = {
   sessionId?: string;
   maxTokens?: number;
   temperature?: number;
+  serviceTier?: SimpleStreamOptions["serviceTier"];
   reasoning?: ThinkLevel | SimpleCompletionThinkingLevel;
   strictReasoningTags?: boolean;
   signal?: AbortSignal;

@@ -215,6 +215,22 @@ describe("completeWithPreparedSimpleCompletionModel", () => {
     ]);
   });
 
+  it.each([undefined, "default", "priority"] as const)(
+    "passes service tier %s to simple completions",
+    async (serviceTier) => {
+      await completeWithPreparedSimpleCompletionModel({
+        model: baseModel,
+        auth: { apiKey: "test", source: "test", mode: "api-key" },
+        context,
+        options: serviceTier ? { serviceTier } : {},
+      });
+      expect(completionRequests()[0]?.options).toEqual({
+        apiKey: "test",
+        ...(serviceTier ? { serviceTier } : {}),
+      });
+    },
+  );
+
   it("carries strict visibility internally without adding a wire option", async () => {
     await completeWithPreparedSimpleCompletionModel({
       model: baseModel,
