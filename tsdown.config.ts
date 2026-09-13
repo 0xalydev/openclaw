@@ -856,7 +856,6 @@ const configs: UserConfig[] = [
             ([name]) => !bundledInventoryEntryNames.has(name),
           ),
         ),
-        "native-hook-relay/entry": "src/cli/native-hook-relay-entry.ts",
       },
       deps: unifiedDeps,
       // Explicit ESM chunks avoid repeated package-format parsing in Node;
@@ -867,6 +866,18 @@ const configs: UserConfig[] = [
         createGatewayRunChunkMetadataPlugin(),
         createRuntimeDependencyOwnershipBuildPlugin(),
       ],
+    },
+    false,
+  ),
+  nodeBuildConfig(
+    {
+      name: TSDOWN_UNIFIED_CONFIG_GROUP,
+      // One-shot relays must not load shared Gateway/SDK chunks just to read a locator.
+      // Keep splitting enabled so the existing Gateway fallback stays lazy.
+      entry: { "native-hook-relay/entry": "src/cli/native-hook-relay-entry.ts" },
+      deps: unifiedDeps,
+      outputOptions: { chunkFileNames: "native-hook-relay/[name]-[hash].mjs" },
+      plugins: [createStateSchemaInlinePlugin()],
     },
     false,
   ),
