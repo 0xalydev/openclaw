@@ -13790,6 +13790,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     expect(localSelected.slice(2).flat().toSorted()).toEqual(uiE2eSerialTestFiles);
     expect(localSelected[1]).toEqual([
       "ui/src/e2e/board-fixture.e2e.test.ts",
+      "ui/src/e2e/control-ui-build-publication.e2e.test.ts",
       "ui/src/e2e/control-ui-retained-assets.e2e.test.ts",
       "ui/src/e2e/service-worker-update.e2e.test.ts",
     ]);
