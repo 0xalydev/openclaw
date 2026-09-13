@@ -1237,6 +1237,34 @@ describe("poll vote echo guard", () => {
     expect(mocks.runMessageAction).toHaveBeenCalledTimes(6);
   });
 
+  it("keeps captured poll aliases when the active channel adapter changes", async () => {
+    const tool = createPollVoteTool();
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "imessage",
+          source: "test",
+          plugin: createChannelPlugin({
+            id: "imessage",
+            label: "iMessage",
+            docsPath: "/channels/imessage",
+            blurb: "Replacement test plugin",
+            actions: ["poll-vote"],
+          }),
+        },
+      ]),
+    );
+    await castBlueVote(tool, { chatGuid: "iMessage;-;+15559998888" });
+    const result = await tool.execute("send", {
+      action: "send",
+      channel: "imessage",
+      message: "Blue",
+    });
+
+    expect(result.details).not.toMatchObject({ status: "suppressed" });
+    expect(mocks.runMessageAction).toHaveBeenCalledTimes(2);
+  });
+
   it("consumes the guard on the first same-route visible send", async () => {
     const tool = createPollVoteTool();
     await castBlueVote(tool);
