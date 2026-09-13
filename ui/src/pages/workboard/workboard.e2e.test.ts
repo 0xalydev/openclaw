@@ -425,8 +425,18 @@ suite.define(() => {
       expect(await createForm.getByLabel("Notes").isDisabled()).toBe(true);
       expect(await createForm.getByLabel("Labels").isDisabled()).toBe(true);
       expect(await createForm.getByRole("button", { name: /^Session:/u }).isDisabled()).toBe(true);
-      expect(await createForm.getByRole("button", { name: /^Status:/u }).isDisabled()).toBe(true);
-      expect(await createForm.getByRole("button", { name: /^Priority:/u }).isDisabled()).toBe(true);
+      expect(
+        await createForm
+          .getByRole("group", { name: "Status", exact: true })
+          .getByRole("radio", { name: "Todo", exact: true })
+          .isDisabled(),
+      ).toBe(true);
+      expect(
+        await createForm
+          .getByRole("group", { name: "Priority", exact: true })
+          .getByRole("radio", { name: "Normal", exact: true })
+          .isDisabled(),
+      ).toBe(true);
       expect(
         await createForm.locator(".workboard-agent-select .agent-select__trigger").isDisabled(),
       ).toBe(true);
@@ -457,8 +467,8 @@ suite.define(() => {
       await expect.poll(() => editDialog.isVisible()).toBe(true);
       await setWorkboardDraftField(editForm, "Title", editedCard.title);
       await setWorkboardDraftField(editForm, "Notes", editedCard.notes ?? "");
-      await editForm.getByRole("button", { name: /^Priority:/u }).click();
-      await editForm.getByRole("option", { name: "High", exact: true }).click();
+      await editForm.getByRole("radio", { name: "High", exact: true }).focus();
+      await writable.page.keyboard.press("Space");
       await setWorkboardDraftField(editForm, "Labels", "ui, proof, e2e");
       const updateBeforeEdit = (await writableGateway.getRequests("workboard.cards.update")).length;
       await editForm.getByRole("button", { name: /^Save$/u }).click();
@@ -653,6 +663,10 @@ suite.define(() => {
       await editForm
         .locator(":scope > .workboard-modal__actions")
         .getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      await writable.page
+        .locator(".workboard-discard")
+        .getByRole("button", { name: "Discard", exact: true })
         .click();
       await waitForNextRequest(writableGateway, "workboard.cards.list", listBeforeDraftClose);
       await cardInColumn(writable.page, "Review", liveRefreshedCard.title).waitFor({

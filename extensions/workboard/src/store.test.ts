@@ -959,6 +959,68 @@ describe("WorkboardStore", () => {
     }
   });
 
+  it("preserves legacy empty board appearance and persists explicit clears", async () => {
+    const dir = tempDirs.make("openclaw-workboard-appearance-");
+    const dbPath = path.join(dir, "workboard.sqlite");
+    const stores = createWorkboardSqliteStores({ dbPath, workerModuleUrl });
+    try {
+      const store = new WorkboardStore(stores.cards, sqliteTestAuxStores(stores));
+      await store.upsertBoard({ id: "planning", name: "Planning", icon: "rocket", color: "blue" });
+      expect(await store.upsertBoard({ id: "planning", name: "Renamed" })).toMatchObject({
+        name: "Renamed",
+        icon: "rocket",
+        color: "blue",
+      });
+      for (const value of [null, "", "   "]) {
+        expect(
+          await store.upsertBoard({ id: "planning", icon: value, color: value }),
+        ).toMatchObject({
+          icon: "rocket",
+          color: "blue",
+        });
+      }
+      const withoutIcon = await store.upsertBoard({
+        id: "planning",
+        icon: "ignored replacement",
+        clearAppearance: ["icon"],
+      });
+      expect(withoutIcon.icon).toBeUndefined();
+      expect(withoutIcon.color).toBe("blue");
+      const withoutColor = await store.upsertBoard({ id: "planning", clearAppearance: ["color"] });
+      expect(withoutColor.icon).toBeUndefined();
+      expect(withoutColor.color).toBeUndefined();
+    } finally {
+      await stores.close();
+    }
+    const reopened = createWorkboardSqliteStores({ dbPath, workerModuleUrl });
+    try {
+      const store = new WorkboardStore(reopened.cards, sqliteTestAuxStores(reopened));
+      const board = (await store.listBoards()).boards.find((item) => item.id === "planning");
+      expect(board).toMatchObject({ name: "Renamed" });
+      expect(board?.icon).toBeUndefined();
+      expect(board?.color).toBeUndefined();
+    } finally {
+      await reopened.close();
+    }
+  });
+
+  it.each([null, true, "icon", ["name"], [null]].map((clearAppearance) => ({ clearAppearance })))(
+    "rejects malformed appearance clearing without modifying the board: $clearAppearance",
+    async ({ clearAppearance }) => {
+      const store = createWorkboardSqliteTestStore();
+      await store.upsertBoard({ id: "planning", icon: "rocket", color: "blue" });
+      await expect(store.upsertBoard({ id: "planning", clearAppearance })).rejects.toThrow(
+        "clearAppearance must be an array",
+      );
+      expect(
+        (await store.listBoards()).boards.find((board) => board.id === "planning"),
+      ).toMatchObject({
+        icon: "rocket",
+        color: "blue",
+      });
+    },
+  );
+
   it.each([
     ["", "non-empty string"],
     ["x".repeat(129), "128 characters or fewer"],
