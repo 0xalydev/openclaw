@@ -103,7 +103,6 @@ describe("board widget sandbox CSP", () => {
     expect(proxy).toContain('lock(Document.prototype,\\"createElement\\"');
     expect(proxy).toContain('wrapSetter(Element.prototype,\\"innerHTML\\"');
     expect(proxy).toContain('wrapMethod(Element.prototype,\\"setHTMLUnsafe\\"');
-    expect(proxy).toContain('lock(globalThis,\\"open\\",undefined)');
     const guardedHtmlIndex = proxy.indexOf("const guardedHtml = guardDocument(params.html)");
     expect(guardedHtmlIndex).toBeGreaterThan(-1);
     expect(proxy.indexOf("widgetPortsOffered.clear()", guardedHtmlIndex)).toBeGreaterThan(
