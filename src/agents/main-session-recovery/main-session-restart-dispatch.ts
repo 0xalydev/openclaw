@@ -47,9 +47,11 @@ import { normalizeFiniteTimestamp } from "./main-session-restart-recovery-shared
 const log = createSubsystemLogger("main-session-restart-recovery");
 const RESTART_RECOVERY_RESUME_MESSAGE = formatSystemTurnPrompt(
   "Your previous turn was interrupted by a gateway restart while " +
-    "OpenClaw was waiting on tool/model work. Continue from the existing " +
-    "transcript and finish the interrupted response. Treat a tool result marked interrupted or " +
-    `missing as having an unknown outcome. ${TOOL_FAILURE_INSTRUCTION}`,
+    "OpenClaw was waiting on tool/model work. The restart did not cancel the user's task. " +
+    "Continue from the existing transcript: check the current state, recover interrupted work, " +
+    "and finish the task without asking the user to repeat the request. Treat a tool result " +
+    "marked interrupted or missing as having an unknown outcome; verify what happened before " +
+    `repeating an action. ${TOOL_FAILURE_INSTRUCTION}`,
 );
 
 type RestartRecoveryTerminalStatus = "error" | "ok" | "timeout";

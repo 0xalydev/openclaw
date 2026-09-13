@@ -1434,6 +1434,9 @@ describe("main-session-restart-recovery", () => {
     expect(resumeParams.sessionKey).toBe("agent:main:main");
     expect(resumeParams.deliver).toBe(false);
     expect(resumeParams.lane).toBe("main");
+    expect(resumeParams.message).toContain("The restart did not cancel the user's task");
+    expect(resumeParams.message).toContain("check the current state, recover interrupted work");
+    expect(resumeParams.message).toContain("verify what happened before repeating an action");
     const store = readStore(path.join(sessionsDir, "sessions.json"));
     expect(store["agent:main:main"]?.abortedLastRun).toBe(false);
   });
