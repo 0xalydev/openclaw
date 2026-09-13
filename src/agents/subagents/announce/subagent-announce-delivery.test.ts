@@ -15,11 +15,11 @@ import {
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { InternalAgentTurnDispatchOptions } from "../../../gateway/agent-turn/internal-facade.types.js";
 import type { callGateway as runtimeCallGateway } from "../../../gateway/call.js";
+import { projectChatDisplayMessages } from "../../../gateway/chat-display-projection.js";
 import { authorizeGatewaySessionCreation } from "../../../gateway/operator-role-policy.js";
 import { waitForGatewayDispatch } from "../../../gateway/server-in-process-dispatch.js";
 import type { GatewayContextResolver } from "../../../gateway/server-methods/types.js";
 import type { dispatchGatewayMethodInProcess as runtimeDispatchGatewayMethodInProcess } from "../../../gateway/server-plugins.js";
-import { buildSessionHistorySnapshot } from "../../../gateway/session-history-state.js";
 import {
   OutboundDeliveryError,
   PlatformMessageNotDispatchedError,
@@ -1425,8 +1425,9 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       __openclaw: { seq: 2 },
     };
     expect(
-      buildSessionHistorySnapshot({ rawMessages: [...rawMessages, assistantReply] }).history
-        .messages,
+      projectChatDisplayMessages([...rawMessages, assistantReply], {
+        includeCommentaryFallbacks: true,
+      }),
     ).toEqual([assistantReply]);
   });
 
@@ -2958,9 +2959,9 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
         content: [{ type: "text" as const, text: "visible final reply" }],
         __openclaw: { seq: 2 },
       };
-      const history = buildSessionHistorySnapshot({
-        rawMessages: [...rawMessages, assistantReply],
-      }).history.messages;
+      const history = projectChatDisplayMessages([...rawMessages, assistantReply], {
+        includeCommentaryFallbacks: true,
+      });
       expect(history).toEqual([assistantReply]);
       expect(JSON.stringify(history)).not.toContain("child done");
     } finally {
