@@ -4414,6 +4414,99 @@ describe("WorkboardStore", () => {
     });
   });
 
+  it("deletes only the removed card's physical attachment blobs", async () => {
+    const { store, dbPath } = createWorkboardSqliteTestHarness();
+    const removed = await store.create({ title: "Removed card" });
+    const retained = await store.create({ title: "Retained card" });
+    const withRemovedAttachment = await store.addAttachment(removed.id, {
+      fileName: "removed.txt",
+      contentBase64: Buffer.from("removed bytes").toString("base64"),
+    });
+    const withRetainedAttachment = await store.addAttachment(retained.id, {
+      fileName: "retained.txt",
+      contentBase64: Buffer.from("retained bytes").toString("base64"),
+    });
+    const removedId = withRemovedAttachment.metadata!.attachments![0]!.id;
+    const retainedId = withRetainedAttachment.metadata!.attachments![0]!.id;
+    const expectedAttachment = await store.getAttachment(retainedId);
+
+    await expect(store.delete(removed.id)).resolves.toEqual({ deleted: true });
+    await expect(store.delete(removed.id)).resolves.toEqual({ deleted: false });
+    await expect(store.getAttachment(removedId)).resolves.toBeUndefined();
+    await expect(store.getAttachment(retainedId)).resolves.toEqual(expectedAttachment);
+    await expect(store.get(retained.id)).resolves.toEqual(withRetainedAttachment);
+    const raw = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(raw.prepare("SELECT attachment_id FROM workboard_attachment_blobs").all()).toEqual([
+        { attachment_id: retainedId },
+      ]);
+      expect(raw.prepare("SELECT id FROM workboard_card_attachments").all()).toEqual([
+        { id: retainedId },
+      ]);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("rolls back attachment deletion when the card deletion fails", async () => {
+    const { store, dbPath } = createWorkboardSqliteTestHarness();
+    const card = await store.create({ title: "Atomic deletion" });
+    const attached = await store.addAttachment(card.id, {
+      fileName: "retained.txt",
+      contentBase64: Buffer.from("keep on rollback").toString("base64"),
+    });
+    const raw = new DatabaseSync(dbPath);
+    try {
+      const before = raw.prepare("SELECT * FROM workboard_attachment_blobs").all();
+      raw.exec(`CREATE TRIGGER reject_card_delete BEFORE DELETE ON workboard_cards
+        BEGIN SELECT RAISE(ABORT, 'test card delete failure'); END`);
+
+      await expect(store.delete(card.id)).rejects.toThrow("test card delete failure");
+      await expect(store.get(card.id)).resolves.toEqual(attached);
+      expect(raw.prepare("SELECT * FROM workboard_attachment_blobs").all()).toEqual(before);
+
+      raw.exec("DROP TRIGGER reject_card_delete");
+      await expect(store.delete(card.id)).resolves.toEqual({ deleted: true });
+      expect(raw.prepare("SELECT * FROM workboard_attachment_blobs").all()).toEqual([]);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("preserves new attachments when a deleted session card is recreated concurrently", async () => {
+    const harness = createConcurrentSqliteHarness("openclaw-workboard-delete-recreation-");
+    const { operation, host, paused } = harness;
+    let deletion: Promise<{ deleted: boolean }> | undefined;
+    let resume: (() => void) | undefined;
+    try {
+      const input = { title: "Captured session", sessionKey: "agent:main:captured-delete" };
+      const original = await operation.captureSession(input);
+      const pause = paused.pauseAfterMatchingWrite((key, value) => key === original.id && !value);
+      resume = pause.resume;
+      deletion = operation.delete(original.id);
+      await pause.reached;
+
+      const recreated = await host.captureSession(input);
+      expect(recreated.id).toBe(original.id);
+      const attached = await host.addAttachment(recreated.id, {
+        fileName: "new-generation.txt",
+        contentBase64: Buffer.from("new generation bytes").toString("base64"),
+      });
+      const attachmentId = attached.metadata!.attachments![0]!.id;
+      const expected = await host.getAttachment(attachmentId);
+      expect(expected).toBeDefined();
+      pause.resume();
+
+      await expect(deletion).resolves.toEqual({ deleted: true });
+      await expect(host.getAttachment(attachmentId)).resolves.toEqual(expected);
+      await expect(host.get(recreated.id)).resolves.toEqual(attached);
+    } finally {
+      resume?.();
+      await deletion?.catch(() => undefined);
+      harness.close();
+    }
+  });
+
   it("deletes card notification subscriptions with the card", async () => {
     const store = createWorkboardSqliteTestStore();
     const card = await store.create({ title: "Notify me" });

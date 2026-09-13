@@ -907,11 +907,6 @@ export class WorkboardCoreStore extends WorkboardStoreRuntime {
         await this.subscriptionStore.delete(entry.key);
       }
     }
-    for (const entry of await this.attachmentStore.entries()) {
-      if (entry.value?.version === 1 && entry.value.attachment?.cardId === cardId) {
-        await this.attachmentStore.delete(entry.key);
-      }
-    }
     await this.removeReferencesToCard(cardId);
     return { deleted: true };
   }
