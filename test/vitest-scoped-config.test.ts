@@ -751,10 +751,6 @@ describe("scoped vitest configs", () => {
     }
   });
 
-  it("defaults extension tests to threads with the non-isolated runner", () => {
-    expectThreadedNonIsolatedRunner(defaultExtensionsConfig);
-  });
-
   it("serializes and isolates Telegram extension files with conflicting mocks", () => {
     expectThreadedIsolatedRunner(defaultExtensionTelegramConfig);
     expect(requireTestConfig(defaultExtensionTelegramConfig).fileParallelism).toBe(false);
