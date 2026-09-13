@@ -12,6 +12,13 @@ function strokeIcon(body: SVGTemplateResult) {
   </svg>`;
 }
 export const icons = {
+  check: strokeIcon(svg`<path d="M20 6 9 17l-5-5" />`),
+  chevronsUpDown: strokeIcon(svg`<path d="m7 15 5 5 5-5" />
+    <path d="m7 9 5-5 5 5" />`),
+  minimize: strokeIcon(svg`<polyline points="4 14 10 14 10 20" />
+    <polyline points="20 10 14 10 14 4" />
+    <line x1="14" x2="21" y1="10" y2="3" />
+    <line x1="3" x2="10" y1="21" y2="14" />`),
   alertTriangle: strokeIcon(svg` <path
       d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"
     />
@@ -97,4 +104,14 @@ export const icons = {
   x: strokeIcon(svg` <path d="M18 6 6 18" />
     <path d="m6 6 12 12" />`),
   zap: strokeIcon(svg`<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />`),
+  priorityLow: strokeIcon(svg`<path d="m6 9 6 5 6-5" />`),
+  priorityHigh: strokeIcon(svg`<path d="m6 15 6-5 6 5" />`),
+  priorityNormal: strokeIcon(svg`<path d="M6 12h12" />`),
+  priorityUrgent: strokeIcon(svg`<path d="m6 10 6-5 6 5m-12 9 6-5 6 5" />`),
+  listFilter: strokeIcon(svg`<path d="M3 6h18M7 12h10M10 18h4" />`),
+  search: strokeIcon(svg`<circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />`),
+  refresh: strokeIcon(
+    svg`<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8M21 3v5h-5" />`,
+  ),
+  chevronLeft: strokeIcon(svg`<path d="m15 6-6 6 6 6" />`),
 };

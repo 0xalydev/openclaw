@@ -1,7 +1,8 @@
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import type { ControlUiHost } from "openclaw/plugin-sdk/control-ui";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
+import { icons } from "../../components/icons.ts";
 import { t } from "../../i18n/index.ts";
 import { formatDateMs, formatDateTimeMs, formatDurationCompact } from "../../lib/format.ts";
 import {
@@ -15,12 +16,17 @@ import {
   type WorkboardPriority,
   type WorkboardStatus,
   type WorkboardTaskSummary,
+  type WorkboardUiState,
 } from "../../lib/workboard/index.ts";
 import { isReservedSessionKey } from "../../lib/workboard/session-links.ts";
 import type { WorkboardSessionResolution } from "../../lib/workboard/session-resolution.ts";
 import { agentDisplayName, findCardAgent, type WorkboardAgentsList } from "./agent-filter.ts";
 
 export type WorkboardProps = {
+  heading?: TemplateResult;
+  scopeControl?: TemplateResult;
+  pageError?: string | null;
+  overlayOpen?: boolean;
   host: object;
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -32,6 +38,7 @@ export type WorkboardProps = {
   sessions: GatewaySessionRow[];
   sessionResolution?: WorkboardSessionResolution;
   scopeAgentId?: string | null;
+  onClearAgentScope?: () => void;
   showAgentFilter?: boolean;
   onOpenSession: ControlUiHost["sessions"]["open"];
   onBoardFilterChange?: (boardFilter: string) => void;
@@ -97,7 +104,7 @@ export function formatWorkboardDate(value: number | undefined): string {
   return value ? formatDateMs(value, { month: "short", day: "numeric" }, "") : "";
 }
 
-export function formatRefreshTime(value: number): string {
+function formatRefreshTime(value: number): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -311,4 +318,49 @@ export function formatDependencyBlockerTitle(
       })
       .join(", "),
   });
+}
+
+const priorityIcons = {
+  low: icons.priorityLow,
+  normal: icons.priorityNormal,
+  high: icons.priorityHigh,
+  urgent: icons.priorityUrgent,
+} satisfies Record<WorkboardPriority, TemplateResult>;
+
+export const renderPriorityIcon = (priority: WorkboardPriority) => priorityIcons[priority];
+
+export function dispatchSummaryMessage(state: WorkboardUiState) {
+  const summary = state.lastDispatchSummary;
+  if (!summary) {
+    return "";
+  }
+  const total = Object.values(summary).reduce((sum, count) => sum + count, 0);
+  return t(total === 0 ? "workboard.dispatchSummaryEmpty" : "workboard.dispatchSummary", {
+    started: String(summary.started),
+    failures: String(summary.failures),
+    promoted: String(summary.promoted),
+    blocked: String(summary.blocked),
+    reclaimed: String(summary.reclaimed),
+    orchestrated: String(summary.orchestrated),
+  });
+}
+
+export function refreshStatusLabel(state: WorkboardUiState) {
+  if (state.lastRefreshAt) {
+    return state.lastRefreshError
+      ? t("workboard.refreshError")
+      : t("workboard.lastRefreshed", { time: formatRefreshTime(state.lastRefreshAt) });
+  }
+  return state.lastRefreshError ? t("workboard.refreshError") : "";
+}
+
+export function workboardErrorMessage(
+  state: {
+    error: string | null;
+    lifecycleTaskRefreshError: string | null;
+    lastRefreshError: string | null;
+  },
+  pageError?: string | null,
+) {
+  return state.error ?? pageError ?? state.lifecycleTaskRefreshError ?? state.lastRefreshError;
 }
