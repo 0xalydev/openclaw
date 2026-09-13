@@ -2227,7 +2227,7 @@ describe("scripts/test-projects changed-target routing", () => {
     );
   });
 
-  it.each(["src/plugin-state", "src/plugin-sdk", "src/agents", "test/plugins"])(
+  it.each(["src/plugin-state", "src/plugin-sdk", "src/agents", "src/commands", "test/plugins"])(
     "retains database worker ownership for directory and glob target %s",
     (directory) => {
       const expected = databaseWorkerCoreTestFiles.filter((file) =>
@@ -2823,6 +2823,14 @@ describe("scripts/test-projects changed-target routing", () => {
       "test/vitest/vitest.utils.config.ts",
     ]);
     expect(buildVitestRunPlans(["src/commands"], process.cwd())).toEqual([
+      {
+        config: "test/vitest/vitest.infra.config.ts",
+        forwardedArgs: [],
+        includePatterns: databaseWorkerCoreTestFiles.filter((file) =>
+          file.startsWith("src/commands/"),
+        ),
+        watchMode: false,
+      },
       {
         config: "test/vitest/vitest.commands-light.config.ts",
         forwardedArgs: [],
@@ -4303,9 +4311,17 @@ describe("scripts/test-projects changed-target routing", () => {
     ]);
   });
 
-  it("routes the full commands test root to both command shards", () => {
+  it("routes the full commands test root to its command and database owners", () => {
     expect(findUnmatchedExplicitTestTargets(["src/commands"])).toEqual([]);
     expect(buildVitestRunPlans(["src/commands"], process.cwd())).toEqual([
+      {
+        config: "test/vitest/vitest.infra.config.ts",
+        forwardedArgs: [],
+        includePatterns: databaseWorkerCoreTestFiles.filter((file) =>
+          file.startsWith("src/commands/"),
+        ),
+        watchMode: false,
+      },
       {
         config: "test/vitest/vitest.commands-light.config.ts",
         forwardedArgs: [],
