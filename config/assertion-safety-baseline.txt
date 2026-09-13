@@ -3532,9 +3532,8 @@ src/trajectory/export.ts	22
 src/trajectory/runtime-store.sqlite.ts	1
 src/trajectory/runtime.ts	4
 src/transcripts/config.ts	2
-src/transcripts/store-export-ownership.ts	5
+src/transcripts/store-export-ownership.ts	2
 src/transcripts/store-sqlite.ts	2
-src/transcripts/store.ts	5
 src/tts/openai-compatible-speech-provider.ts	1
 src/tts/status-config.ts	1
 src/tts/tts-auto-mode.ts	2
