@@ -93,6 +93,7 @@ it.each([
         setActiveEmbeddedRun(sessionId, embedded, target.sessionKey);
       }
       const subscriptions = startGatewayEventSubscriptions({
+        signal: new AbortController().signal,
         log,
         broadcast: context.broadcast,
         broadcastToConnIds: context.broadcastToConnIds,

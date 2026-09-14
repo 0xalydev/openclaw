@@ -75,6 +75,7 @@ function dispatchEventHandler<TEvent>(params: {
 
 /** Register gateway runtime event subscriptions and return unsubscribe handles. */
 export function startGatewayEventSubscriptions(params: {
+  signal: AbortSignal;
   log: SubsystemLogger;
   broadcast: GatewayBroadcastFn;
   broadcastToConnIds: (
@@ -144,6 +145,22 @@ export function startGatewayEventSubscriptions(params: {
     getConfig: getRuntimeConfig,
     sessionObserver,
   });
+  let sessionBackgroundStop: Promise<void> | undefined;
+  // Auxiliary model calls can inherit request work; cancel before that work drains.
+  const stopSessionBackgroundWork = (): void => {
+    if (!sessionBackgroundStop) {
+      sessionCompanion.dispose();
+      sessionObserver.dispose();
+      sessionBackgroundStop = sessionActivitySummaries.dispose();
+      void sessionBackgroundStop.catch((error: unknown) => {
+        params.log.warn(`session background cleanup failed: ${String(error)}`);
+      });
+    }
+  };
+  params.signal.addEventListener("abort", stopSessionBackgroundWork, { once: true });
+  if (params.signal.aborted) {
+    stopSessionBackgroundWork();
+  }
   const unsubscribePrivateAuditEvents = auditEnabled
     ? onAgentAuditEvent(auditRecorder.record)
     : undefined;
@@ -492,9 +509,9 @@ export function startGatewayEventSubscriptions(params: {
   });
   const agentUnsub = async () => {
     unsubscribeAgentEvents();
-    sessionCompanion.dispose();
-    sessionObserver.dispose();
-    await sessionActivitySummaries.dispose();
+    params.signal.removeEventListener("abort", stopSessionBackgroundWork);
+    stopSessionBackgroundWork();
+    await sessionBackgroundStop;
     unsubscribePrivateAuditEvents?.();
     unsubscribeToolAuditEvents?.();
     unsubscribeMessageAuditEvents?.();

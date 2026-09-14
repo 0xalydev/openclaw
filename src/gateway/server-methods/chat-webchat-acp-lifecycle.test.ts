@@ -47,6 +47,7 @@ const mockLog: SubsystemLogger = {
 function createParams(): SubscriptionParams {
   const chatRunState = createChatRunState();
   return {
+    signal: new AbortController().signal,
     log: mockLog,
     broadcast: vi.fn(),
     broadcastToConnIds: vi.fn(),
