@@ -23,6 +23,7 @@ export type OpenClawToolsOptions = {
   sandboxBrowserBridgeUrl?: string;
   allowHostBrowserControl?: boolean;
   agentSessionKey?: string;
+  gatewayUiCommandTarget?: import("../gateway/ui-command-target.types.js").GatewayUiCommandTarget;
   toolBindings?: Readonly<Record<string, unknown>>;
   /** Durable store key when it differs from the sandbox/policy session key. */
   runSessionKey?: string;

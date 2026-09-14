@@ -24,6 +24,8 @@ import {
   shouldIncludeSecretsToolForOpenClawTools,
 } from "./openclaw-tools.registration.js";
 import { textResult, type AnyAgentTool } from "./tools/common.js";
+import { getGatewayToolCallerIdentity } from "./tools/gateway-caller-context.js";
+import * as inProcessGateway from "./tools/in-process-gateway.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 
 vi.mock("./openclaw-plugin-tools.js", () => ({
@@ -914,6 +916,32 @@ describe("gateway client capability tool filtering", () => {
   it("only exposes screen to UI-command clients", () => {
     expect(hasTool(createOpenClawTools(), "screen")).toBe(false);
     expect(hasTool(createOpenClawTools({ clientCaps: ["ui-commands"] }), "screen")).toBe(true);
+  });
+
+  it("retains the requesting browser through coding tool assembly", async () => {
+    const gatewayUiCommandTarget = { connId: "requester-tab", profileId: "requester" };
+    const targets: unknown[] = [];
+    const call = vi
+      .spyOn(inProcessGateway, "callInProcessGatewayTool")
+      .mockImplementation(async () => {
+        targets.push(getGatewayToolCallerIdentity()?.gatewayUiCommandTarget);
+        return { ok: true } as never;
+      });
+    try {
+      const tools = createOpenClawCodingTools({
+        config: withDefaultRoster(undefined),
+        sessionKey: "agent:main:main",
+        clientCaps: ["ui-commands"],
+        gatewayUiCommandTarget,
+      });
+      await expectToolNamed(tools, "screen").execute("select", {
+        action: "navigate",
+        sessionKey: "agent:main:other",
+      });
+      expect(targets).toEqual([gatewayUiCommandTarget]);
+    } finally {
+      call.mockRestore();
+    }
   });
 
   it("exposes GitHub publication only from a prepared session capability", () => {

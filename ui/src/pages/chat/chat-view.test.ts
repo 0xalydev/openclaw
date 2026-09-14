@@ -10129,32 +10129,45 @@ describe("right-click Reply", () => {
     );
   });
 
-  it("opens context menu and calls onSetReply when Reply is selected", () => {
+  it("keeps Reply and composer focus available when the pane rerenders with its menu open", () => {
     const onSetReply = vi.fn();
-    const { bubble } = renderChatBubble(
-      { onSetReply },
+    const transcript = createTestTranscript();
+    const { container, bubble } = renderChatBubble(
+      { onSetReply, transcript },
       {
         messageId: "msg-stable-1",
         senderLabel: "User",
         text: "hello world",
       },
     );
+    document.body.appendChild(container);
+    transcript.hostConnected();
 
-    dispatchContextMenu(bubble);
+    try {
+      dispatchContextMenu(bubble);
 
-    const menu = document.querySelector(".chat-reply-context-menu");
-    expect(menu).not.toBeNull();
-    menu!.querySelector("button")!.click();
+      const menu = document.querySelector(".chat-reply-context-menu");
+      expect(menu).not.toBeNull();
+      renderChatInto(container, { onSetReply, transcript, draft: "A draft update" });
+      menu!.querySelector("button")!.click();
 
-    expect(onSetReply).toHaveBeenCalledTimes(1);
-    const target = itemAt(
-      itemAt(onSetReply.mock.calls, 0, "reply callback call"),
-      0,
-      "reply target",
-    );
-    expect(target.messageId).toBe("msg-stable-1");
-    expect(target.text).toBe("hello world");
-    expect(target.senderLabel).toBe("User");
+      expect(onSetReply).toHaveBeenCalledTimes(1);
+      const target = itemAt(
+        itemAt(onSetReply.mock.calls, 0, "reply callback call"),
+        0,
+        "reply target",
+      );
+      expect(target.messageId).toBe("msg-stable-1");
+      expect(target.text).toBe("hello world");
+      expect(target.senderLabel).toBe("User");
+      expect(document.activeElement).toBe(
+        container.querySelector(".agent-chat__composer-combobox textarea"),
+      );
+    } finally {
+      transcript.hostDisconnected();
+      render(null, container);
+      container.remove();
+    }
   });
 
   it("backs off before an emoji that crosses the reply target limit", () => {
