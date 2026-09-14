@@ -236,6 +236,11 @@ describe("test-projects args", () => {
       config: "test/vitest/vitest.wizard.config.ts",
     },
     {
+      title: "routes wizard recovery to the host-owned infra fork shard",
+      target: "src/wizard/setup.inference-recovery.integration.test.ts",
+      config: "test/vitest/vitest.infra.config.ts",
+    },
+    {
       title: "routes tui targets to the tui config",
       target: "src/tui/tui.test.ts",
       config: "test/vitest/vitest.tui.config.ts",
