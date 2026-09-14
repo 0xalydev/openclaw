@@ -8288,7 +8288,6 @@ describe("gateway server chat", () => {
           idempotencyKey: "idem-abort-1",
           timeoutMs: 30_000,
         }),
-        2_000,
       );
 
       expect(sendRes.ok).toBe(true);
