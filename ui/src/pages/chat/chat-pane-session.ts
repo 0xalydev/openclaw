@@ -214,6 +214,9 @@ export abstract class ChatPaneSession extends ChatPaneTaskSuggestions {
           if (historyCommitted) {
             this.markSessionRead(selectedChatSessionRow(state));
           }
+          if (client) {
+            void this.loadHeaderPlatform(client, connectionGeneration);
+          }
           void loadChatBranches(state);
           void this.probeSessionDiscussion(sessionKey);
           this.hydrateSessionCompanion(sessionKey);
