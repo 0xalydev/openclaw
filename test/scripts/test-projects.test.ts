@@ -2022,38 +2022,52 @@ describe("scripts/test-projects changed-target routing", () => {
     );
   });
 
-  it("completes broad-name fallback without synchronous source opens", () => {
-    const files: Record<string, string> = {
-      "src/owner/value.ts": "export const value = 1;\n",
-      "src/owner/barrel.ts": 'export\n { value } from\n "./value.js";\n',
-      "src/owner/directory/index.ts": 'export * from "../barrel.js";\n',
-      "src/owner/consumer.test.ts": 'import(\n "./directory"\n);\n',
-      "src/owner/type.consumer.test.ts": 'import type {\n Value\n } from "./value.js";\n',
-      "src/owner/deleted.test.ts": 'import "./value.js";\n',
-      "src/owner/value.live.test.ts": 'import "./value.js";\n',
-    };
-    // Only the broad basename appears in these files; the 800-candidate cap
-    // must fall back to a complete graph, not silently drop the real consumers.
-    for (let index = 0; index < 801; index += 1) {
-      files[`src/padding/${index}.ts`] = "// value\n";
-    }
-    withTinyGitRepo(files, (cwd) => {
-      fs.unlinkSync(path.join(cwd, "src/owner/deleted.test.ts"));
-      fs.writeFileSync(path.join(cwd, "src/owner/untracked.test.ts"), 'import "./value.js";\n');
-      const reads = vi.spyOn(fs, "readFileSync");
-      try {
-        expect(resolveChangedTestTargetPlan(["src/owner/value.ts"], { cwd }).targets).toEqual([
-          "src/owner/consumer.test.ts",
-          "src/owner/type.consumer.test.ts",
-        ]);
-        expect(
-          reads.mock.calls.filter(([file]) => typeof file === "string" && file.startsWith(cwd)),
-        ).toEqual([]);
-      } finally {
-        reads.mockRestore();
+  it.each([false, true])(
+    "keeps broad-name consumers complete without synchronous source opens (narrow importer: %s)",
+    (includeNarrowImporter) => {
+      const files: Record<string, string> = {
+        "src/owner/value.ts": "export const value = 1;\n",
+        "src/owner/barrel.ts": 'export\n { value } from\n "./value.js";\n',
+        "src/owner/directory/index.ts": 'export * from "../barrel.js";\n',
+        "src/owner/consumer.test.ts": 'import(\n "./directory"\n);\n',
+        "src/owner/type.consumer.test.ts": 'import type {\n Value\n } from "./value.js";\n',
+        "src/owner/deleted.test.ts": 'import "./value.js";\n',
+        "src/owner/value.live.test.ts": 'import "./value.js";\n',
+      };
+      if (includeNarrowImporter) {
+        files["src/outside.consumer.test.ts"] = 'import "./owner/value.js";\n';
       }
-    });
-  });
+      // A narrow path match must not hide consumers of a widely occurring basename.
+      for (let index = 0; index < 801; index += 1) {
+        files[`src/padding/${index}.ts`] = "// value\n";
+      }
+      withTinyGitRepo(files, (cwd) => {
+        fs.unlinkSync(path.join(cwd, "src/owner/deleted.test.ts"));
+        fs.writeFileSync(path.join(cwd, "src/owner/untracked.test.ts"), 'import "./value.js";\n');
+        const reads = vi.spyOn(fs, "readFileSync");
+        try {
+          const expectedTargets = [
+            ...(includeNarrowImporter ? ["src/outside.consumer.test.ts"] : []),
+            "src/owner/consumer.test.ts",
+            "src/owner/type.consumer.test.ts",
+          ];
+          expect(
+            resolveChangedTestTargetPlan(["src/owner/value.ts"], { cwd }).targets,
+            "initial owner selection",
+          ).toEqual(expectedTargets);
+          expect(
+            resolveChangedTestTargetPlan(["src/owner/value.ts"], { cwd }).targets,
+            "cached owner selection",
+          ).toEqual(expectedTargets);
+          expect(
+            reads.mock.calls.filter(([file]) => typeof file === "string" && file.startsWith(cwd)),
+          ).toEqual([]);
+        } finally {
+          reads.mockRestore();
+        }
+      });
+    },
+  );
 
   it.each([
     { name: "Git inventory", withRepo: withTinyGitRepo },
@@ -2061,27 +2075,26 @@ describe("scripts/test-projects changed-target routing", () => {
   ])(
     "keeps tooling imports direct while preserving literal file references ($name)",
     ({ withRepo }) => {
-      withRepo(
-        {
-          "scripts/fixture-source.mts": "export const value = 1;\n",
-          "scripts/fixture-bridge.mts": 'export * from "./fixture-source.mjs";\n',
-          "test/scripts/direct.consumer.test.ts": 'import "../../scripts/fixture-source.mjs";\n',
-          "test/scripts/transitive.consumer.test.ts":
-            'import "../../scripts/fixture-bridge.mjs";\n',
-          "test/scripts/literal.consumer.test.ts":
-            'const fixture = "scripts/fixture-source.mts";\n',
-          "test/scripts/substring.consumer.test.ts":
-            'const fixture = "scripts/fixture-source.mts.bak";\n',
-        },
-        (cwd) => {
-          expect(
-            resolveChangedTestTargetPlan(["scripts/fixture-source.mts"], { cwd }).targets,
-          ).toEqual([
-            "test/scripts/direct.consumer.test.ts",
-            "test/scripts/literal.consumer.test.ts",
-          ]);
-        },
-      );
+      const files: Record<string, string> = {
+        "scripts/fixture-source.mts": "export const value = 1;\n",
+        "scripts/fixture-bridge.mts": 'export * from "./fixture-source.mjs";\n',
+        "test/scripts/direct.consumer.test.ts": 'import "../../scripts/fixture-source.mjs";\n',
+        "test/scripts/transitive.consumer.test.ts": 'import "../../scripts/fixture-bridge.mjs";\n',
+        "test/scripts/literal.consumer.test.ts": 'const fixture = "scripts/fixture-source.mts";\n',
+        "test/scripts/substring.consumer.test.ts":
+          'const fixture = "scripts/fixture-source.mts.bak";\n',
+      };
+      for (let index = 0; index < 801; index += 1) {
+        files[`src/padding/${index}.ts`] = "// scripts/fixture-source\n";
+      }
+      withRepo(files, (cwd) => {
+        expect(
+          resolveChangedTestTargetPlan(["scripts/fixture-source.mts"], { cwd }).targets,
+        ).toEqual([
+          "test/scripts/direct.consumer.test.ts",
+          "test/scripts/literal.consumer.test.ts",
+        ]);
+      });
     },
   );
 
