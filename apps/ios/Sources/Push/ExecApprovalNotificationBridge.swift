@@ -381,19 +381,6 @@ enum ExecApprovalNotificationBridge {
             userInfo: userInfo,
             configuration: self.configuration)
     }
-
-    @MainActor
-    static func removeNotifications(
-        for push: ApprovalNotificationPrompt,
-        notificationCenter: NotificationCentering,
-        includingLegacyOwnerless: Bool = false) async
-    {
-        await ApprovalNotificationBridge.removeNotifications(
-            for: push,
-            notificationCenter: notificationCenter,
-            includingLegacyOwnerless: includingLegacyOwnerless,
-            configuration: self.configuration)
-    }
 }
 
 enum PluginApprovalNotificationBridge {
@@ -436,19 +423,6 @@ enum PluginApprovalNotificationBridge {
     static func parseResolvedPush(userInfo: [AnyHashable: Any]) -> ApprovalNotificationPrompt? {
         ApprovalNotificationBridge.parseResolvedPush(
             userInfo: userInfo,
-            configuration: self.configuration)
-    }
-
-    @MainActor
-    static func removeNotifications(
-        for push: ApprovalNotificationPrompt,
-        notificationCenter: NotificationCentering,
-        includingLegacyOwnerless: Bool = false) async
-    {
-        await ApprovalNotificationBridge.removeNotifications(
-            for: push,
-            notificationCenter: notificationCenter,
-            includingLegacyOwnerless: includingLegacyOwnerless,
             configuration: self.configuration)
     }
 }

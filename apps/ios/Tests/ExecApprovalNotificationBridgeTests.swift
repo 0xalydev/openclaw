@@ -105,7 +105,7 @@ private final class MockNotificationCenter: NotificationCentering, @unchecked Se
         let push = ExecApprovalNotificationPrompt(
             approvalId: "approval-123",
             gatewayDeviceId: "gateway-a")
-        await ExecApprovalNotificationBridge.removeNotifications(
+        await ApprovalNotificationBridge.removeNotifications(
             for: push,
             notificationCenter: center)
 
@@ -201,7 +201,7 @@ private final class MockNotificationCenter: NotificationCentering, @unchecked Se
                 ]),
         ]
 
-        await ExecApprovalNotificationBridge.removeNotifications(
+        await ApprovalNotificationBridge.removeNotifications(
             for: composed,
             notificationCenter: center)
 
@@ -219,10 +219,10 @@ private final class MockNotificationCenter: NotificationCentering, @unchecked Se
         let slashCenter = MockNotificationCenter()
         let escapedCenter = MockNotificationCenter()
 
-        await ExecApprovalNotificationBridge.removeNotifications(
+        await ApprovalNotificationBridge.removeNotifications(
             for: ExecApprovalNotificationPrompt(approvalId: "/", gatewayDeviceId: "gateway-a"),
             notificationCenter: slashCenter)
-        await ExecApprovalNotificationBridge.removeNotifications(
+        await ApprovalNotificationBridge.removeNotifications(
             for: ExecApprovalNotificationPrompt(approvalId: "%2F", gatewayDeviceId: "gateway-a"),
             notificationCenter: escapedCenter)
 
@@ -279,7 +279,7 @@ private final class MockNotificationCenter: NotificationCentering, @unchecked Se
             approvalId: "approval-shared",
             gatewayDeviceId: "gateway-a")
 
-        await ExecApprovalNotificationBridge.removeNotifications(
+        await ApprovalNotificationBridge.removeNotifications(
             for: push,
             notificationCenter: center,
             includingLegacyOwnerless: true)
@@ -384,7 +384,7 @@ private final class MockNotificationCenter: NotificationCentering, @unchecked Se
                 ]),
         ]
 
-        await PluginApprovalNotificationBridge.removeNotifications(
+        await ApprovalNotificationBridge.removeNotifications(
             for: ApprovalNotificationPrompt(
                 approvalId: "shared-approval-id",
                 gatewayDeviceId: "gateway-a",
