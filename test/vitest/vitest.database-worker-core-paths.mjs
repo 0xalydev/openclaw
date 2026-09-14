@@ -10,6 +10,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/wizard/setup.inference-recovery.integration.test.ts",
   "src/wizard/setup.test.ts",
   "src/wizard/setup.inference-recovery.integration.test.ts",
+  "src/wizard/setup.provenance.integration.test.ts",
   "src/flows/search-setup.test.ts",
   "src/flows/channel-setup.test.ts",
   "src/security/audit-config-symlink.test.ts",
