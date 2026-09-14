@@ -15,6 +15,7 @@ import { registerCronEnglish } from "../../ui/src/i18n/locales/en-cron.ts";
 import { registerDebugEnglish } from "../../ui/src/i18n/locales/en-debug.ts";
 import { registerDesktopEnglish } from "../../ui/src/i18n/locales/en-desktop.ts";
 import { registerDevicesEnglish } from "../../ui/src/i18n/locales/en-devices.ts";
+import { registerDreamingEnglish } from "../../ui/src/i18n/locales/en-dreaming.ts";
 import { registerLoginEnglish } from "../../ui/src/i18n/locales/en-login.ts";
 import { registerMeetingsEnglish } from "../../ui/src/i18n/locales/en-meetings.ts";
 import { registerMemoryImportEnglish } from "../../ui/src/i18n/locales/en-memory-import.ts";
@@ -56,6 +57,7 @@ const sourceFiles = [
   "en-debug.ts",
   "en-desktop.ts",
   "en-devices.ts",
+  "en-dreaming.ts",
   "en-login.ts",
   "en-meetings.ts",
   "en-memory-import.ts",
@@ -113,6 +115,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerChatCiEnglish.catalog,
     registerCronEnglish.catalog,
     registerDevicesEnglish.catalog,
+    registerDreamingEnglish.catalog,
     registerLoginEnglish.catalog,
     registerMeetingsEnglish.catalog,
     registerMemoryImportEnglish.catalog,
