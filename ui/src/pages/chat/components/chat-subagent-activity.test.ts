@@ -129,7 +129,7 @@ describe("subagent activity rows", () => {
 
     const snippet = container.querySelector(".chat-subagent-activity__snippet");
     expect(snippet?.textContent).toBe(expected);
-    expect(snippet?.getAttribute("title")).toBe(expected);
+    expect(container.querySelector("openclaw-tooltip")?.content).toContain(expected);
     expect(snippet?.childElementCount).toBe(0);
   });
 
@@ -138,18 +138,51 @@ describe("subagent activity rows", () => {
       title: "  Layout review  ",
       label: "Layout review",
       status: "running" as const,
-      statusLabel: "Running",
+      description: "Running — working on this task.",
     },
     {
       title: "Layout review",
       label: "Layout review",
       status: "completed" as const,
-      statusLabel: "Completed",
+      description: "Completed — finished successfully.",
     },
-    { title: "", label: "Subagent", status: "running" as const, statusLabel: undefined },
-    { title: undefined, label: "Subagent", status: "running" as const, statusLabel: undefined },
-    { title: " \n ", label: "Subagent failed", status: "failed" as const, statusLabel: undefined },
-  ])("opens $label activity with $status status", ({ title, label, status, statusLabel }) => {
+    {
+      title: "",
+      label: "Subagent",
+      status: "running" as const,
+      description: "Running — working on this task.",
+    },
+    {
+      title: undefined,
+      label: "Subagent",
+      status: "running" as const,
+      description: "Running — working on this task.",
+    },
+    {
+      title: " \n ",
+      label: "Subagent",
+      status: "failed" as const,
+      description: "Failed — the task ended with an error.",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "queued" as const,
+      description: "Queued — waiting to start.",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "cancelled" as const,
+      description: "Cancelled — stopped before completion.",
+    },
+    {
+      title: "Layout review",
+      label: "Layout review",
+      status: "timed_out" as const,
+      description: "Timed out — reached its time limit.",
+    },
+  ])("opens $label activity with $status status", ({ title, label, status, description }) => {
     const task = makeTask({
       id: "clickable-subagent",
       title,
@@ -174,12 +207,15 @@ describe("subagent activity rows", () => {
     );
     expect(row?.tagName).toBe("BUTTON");
     expect(row?.querySelector(".chat-subagent-activity__label")?.textContent).toBe(label);
-    expect(row?.querySelector(".chat-subagent-activity__status")?.textContent).toBe(statusLabel);
+    expect(row?.textContent?.replace(/\s+/g, " ").trim()).toBe(`${label} Checking spacing`);
+    expect(container.querySelector("openclaw-tooltip")?.content).toBe(
+      `${label}\n${description}\nChecking spacing`,
+    );
     expect(row?.querySelector(".chat-subagent-activity__snippet")?.textContent).toBe(
       "Checking spacing",
     );
     expect(row?.getAttribute("aria-label")).toBe(
-      `Open subagent details for ${title?.trim() || "Subagent"}`,
+      `Open subagent details for ${label}. ${description}`,
     );
     row?.click();
     expect(onOpenTaskDetail).toHaveBeenCalledWith(task);
@@ -259,7 +295,11 @@ describe("subagent activity rows", () => {
     });
     expect(container.querySelectorAll(".chat-subagent-activity__row")).toHaveLength(2);
     expect(container.textContent).toContain("Reviewing the current session");
-    expect(container.textContent).toContain("Completed");
+    expect(
+      container
+        .querySelector('[data-subagent-task-id="recent-subagent"]')
+        ?.getAttribute("aria-label"),
+    ).toContain("Completed — finished successfully.");
     expect(container.textContent).not.toContain("Wrong requester");
     expect(container.textContent).not.toContain("Too old");
     expect(container.querySelector(".chat-tasks-status__link")?.textContent?.trim()).toBe(
@@ -330,7 +370,9 @@ describe("subagent activity rows", () => {
     const renderCurrent = () =>
       render(html`${renderBackgroundTasksStatusRow(createBackgroundTasksProps(host))}`, container);
     renderCurrent();
-    expect(container.textContent).toContain("Cancelled");
+    expect(
+      container.querySelector(".chat-subagent-activity__row")?.getAttribute("aria-label"),
+    ).toContain("Cancelled — stopped before completion.");
     expect(container.textContent).not.toContain("Editing the final report");
     expect(container.querySelector(".chat-diffstat")).toBeNull();
 

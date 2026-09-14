@@ -728,7 +728,9 @@ suite.define(() => {
           },
         });
 
-        await firstRow.getByText("Cancelled", { exact: true }).waitFor();
+        await expect
+          .poll(() => firstRow.getAttribute("aria-label"))
+          .toContain("Cancelled — stopped before completion.");
         await detailPanel.getByText("Failed").waitFor();
         expect(await firstRow.textContent()).not.toContain("Cross-checking requester ownership");
         expect(await activity.locator(".chat-diffstat").count()).toBe(0);
@@ -747,6 +749,92 @@ suite.define(() => {
         );
         await page.getByRole("button", { name: "Close Review" }).click();
         await detailPanel.waitFor({ state: "detached" });
+
+        const states = [
+          ["queued", "Queued — waiting to start."],
+          ["running", "Running — working on this task."],
+          ["completed", "Completed — finished successfully."],
+          ["failed", "Failed — the task ended with an error."],
+          ["cancelled", "Cancelled — stopped before completion."],
+          ["timed_out", "Timed out — reached its time limit."],
+        ] as const;
+        const claw = firstRow.locator(".chat-subagent-activity__claw > svg");
+        const jaw = claw.locator(".claw-icon__jaw");
+        const indicator = firstRow.locator(".chat-subagent-activity__indicator");
+        const tooltip = firstRow.locator("..").locator("wa-tooltip[open] .tooltip-content");
+        const tooltipPopup = firstRow
+          .locator("..")
+          .locator('wa-tooltip[open] wa-popup [part="popup"]');
+        const isMoving = () =>
+          jaw.evaluate((element) =>
+            element.getAnimations().some((animation) => animation.playState === "running"),
+          );
+        let idleColor = "";
+        for (const [status, description] of states) {
+          const active = status === "queued" || status === "running";
+          const preview = active ? first.lastActivity : "Reviewed session ownership";
+          await gateway.emitGatewayEvent("task", {
+            action: "upserted",
+            task: {
+              ...first,
+              status,
+              updatedAt: Date.now(),
+              endedAt: active ? undefined : Date.now(),
+              terminalSummary: active ? undefined : preview,
+            },
+          });
+          await expect.poll(() => firstRow.getAttribute("aria-label")).toContain(description);
+          expect((await firstRow.textContent())?.replace(/\s+/g, " ").trim()).toBe(
+            `${first.title} ${preview}`,
+          );
+          await expect.poll(isMoving).toBe(status === "running");
+          expect(await claw.count()).toBe(1);
+          expect(await firstRow.locator(".chat-subagent-activity__badge").count()).toBe(
+            status === "failed" || status === "timed_out" ? 1 : 0,
+          );
+          if (status === "queued") {
+            idleColor = await indicator.evaluate((element) => getComputedStyle(element).color);
+          }
+          if (status === "completed") {
+            expect(await indicator.evaluate((element) => getComputedStyle(element).color)).not.toBe(
+              idleColor,
+            );
+          }
+          await firstRow.hover();
+          await tooltip.waitFor({ state: "visible" });
+          expect(await tooltip.textContent()).toContain(description);
+          await writeFile(
+            path.join(activityDir, `status-${status}.png`),
+            await takeControlUiViewportScreenshot(page, tooltipPopup, [firstRow, tooltip]),
+          );
+          await page.keyboard.press("Escape");
+          await tooltip.waitFor({ state: "detached" });
+          await firstRow
+            .locator("..")
+            .locator("wa-tooltip .tooltip-content")
+            .waitFor({ state: "hidden" });
+          await page.mouse.move(1, 1);
+          if (status === "running") {
+            await page.emulateMedia({ reducedMotion: "reduce" });
+            await expect.poll(isMoving).toBe(false);
+            await page.emulateMedia({ reducedMotion: "no-preference" });
+            await expect.poll(isMoving).toBe(true);
+          }
+          if (status === "completed") {
+            await page.emulateMedia({ reducedMotion: "reduce" });
+            await expect
+              .poll(() => indicator.evaluate((element) => getComputedStyle(element).color), {
+                timeout: 5_000,
+              })
+              .toBe(idleColor);
+            await page.emulateMedia({ reducedMotion: "no-preference" });
+          }
+        }
+        await page.keyboard.press("Tab");
+        await firstRow.focus();
+        await tooltip.waitFor({ state: "visible" });
+        expect(await tooltip.textContent()).toContain("Timed out — reached its time limit.");
+        await page.keyboard.press("Escape");
       },
     );
   });
