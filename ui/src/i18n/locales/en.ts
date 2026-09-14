@@ -5,6 +5,7 @@ import * as agentEn from "./en-agents.ts";
 
 export const en: TranslationMap & {
   board: TranslationMap & { widget: TranslationMap };
+  chat: TranslationMap & { backgroundTasks: TranslationMap };
   browser: TranslationMap & { errors: TranslationMap };
   configPage: TranslationMap;
   connection: TranslationMap;
@@ -5613,49 +5614,7 @@ export const en: TranslationMap & {
       workedFor: "Worked for {duration}",
       worked: "Worked",
     },
-    backgroundTasks: {
-      label: "Background tasks",
-      title: "Background tasks",
-      show: "Show background tasks",
-      collapse: "Collapse background tasks",
-      refresh: "Refresh background tasks",
-      loading: "Loading background tasks…",
-      running: "Running ({count})",
-      finished: "Finished ({count})",
-      statusRunningOne: "1 running task",
-      statusRunningMany: "{count} running tasks",
-      statusPreviewMore: "+{count} more",
-      stopTask: "Stop {title}",
-      now: "Now",
-      toolCallsOne: "1 tool call",
-      toolCallsMany: "{count} tool calls",
-      toolUseOne: "1 tool use",
-      toolUseMany: "{count} tool uses",
-      detailLoading: "Loading task details…",
-      detailFailed: "Could not load task details.",
-      detailRetry: "Try again",
-      transcriptLoading: "Loading task transcript…",
-      transcriptEmpty: "No transcript messages yet.",
-      transcriptFailed: "Could not load task transcript.",
-      taskDetailTitle: "Task details",
-      taskUnavailable: "This task is no longer available.",
-      prompt: "Prompt",
-      output: "Output",
-      promptUnavailable: "Prompt unavailable.",
-      outputPending: "No output yet.",
-      subagentActivity: {
-        label: "Subagent activity",
-        untitled: "Subagent",
-        queuedDescription: "Queued — waiting to start.",
-        runningDescription: "Running — working on this task.",
-        completedDescription: "Completed — finished successfully.",
-        failedDescription: "Failed — the task ended with an error.",
-        cancelledDescription: "Cancelled — stopped before completion.",
-        timedOutDescription: "Timed out — reached its time limit.",
-        openDetails: "Open subagent details for {title}",
-        moreWorking: "+{count} more working",
-      },
-    },
+    backgroundTasks: {},
     sessionDiff: {
       title: "Changes",
       show: "Show session changes",
