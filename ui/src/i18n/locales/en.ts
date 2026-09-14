@@ -1038,6 +1038,10 @@ export const en: TranslationMap & {
     browserLoadFailed: "Couldn't list that folder.",
     hiddenFolder: "Hidden folder",
     worktree: "Worktree",
+    newWorkspace: "New workspace",
+    newWorkspaceDescription: "Start in an empty folder for this session.",
+    remoteSourceUnavailable:
+      "This folder cannot provide a Git checkout. Select New workspace to start empty, or choose a repository.",
     checkingGit: "Checking Git availability…",
     gitCheckUnavailable: "Couldn't verify Git for this folder. Choose it again to retry.",
     worktreeUnavailable: "Selected folder is not a Git checkout",
