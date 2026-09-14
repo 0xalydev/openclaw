@@ -29,7 +29,7 @@ export type GitWorkerEffects = GitWorktreeEffects &
 export type GitWorkerEffect = {
   [K in keyof GitWorkerEffects]: { type: K; input: GitWorkerEffects[K]["input"] };
 }[keyof GitWorkerEffects];
-type GitWorkerTextOptions = Omit<GitCommandOptions, "signal">;
+type GitWorkerTextOptions = Omit<GitCommandOptions, "signal" | "beforeRun">;
 type GitWorkerBufferOptions = Omit<BufferedCommandOptions, "signal">;
 export type GitWorkerGitCommands = {
   "git.text": {
