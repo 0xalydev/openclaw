@@ -364,10 +364,12 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
         const exhausted = !nextPagination.hasMore || nextPagination.nextOffset <= requestedOffset;
         const messages = Array.isArray(result.messages) ? result.messages : [];
         const projection = getChatSessionProjection(state);
-        const pendingUsers = projection.entries.filter(
-          (entry) => entry.pending && entry.identity?.role === "user" && entry.pendingRunId,
+        const pendingRunIds = projection.entries.flatMap((entry) =>
+          entry.pending && entry.identity?.role === "user" && entry.pendingRunId
+            ? [entry.pendingRunId]
+            : [],
         );
-        if (pendingUsers.length) {
+        if (pendingRunIds.length) {
           const canonicalUsers = messages.filter((message) => {
             const identity = readSessionMessageIdentity(message);
             return (
@@ -384,17 +386,13 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
             scope: projection.scope,
           });
           const remaining = new Set(
-            adopted.entries.filter((entry) => entry.pending).map((entry) => entry.pendingRunId),
+            adopted.entries
+              .filter((entry) => entry.pending && entry.identity?.role === "user")
+              .map((entry) => entry.pendingRunId),
           );
           retireChatSubmissionDisplay(
             state,
-            new Set(
-              pendingUsers.flatMap((entry) =>
-                entry.pendingRunId && !remaining.has(entry.pendingRunId)
-                  ? [entry.pendingRunId]
-                  : [],
-              ),
-            ),
+            new Set(pendingRunIds.filter((runId) => !remaining.has(runId))),
           );
         }
         const nextMessages = this.prependUniqueNativeMessages(messages, state.chatMessages);
