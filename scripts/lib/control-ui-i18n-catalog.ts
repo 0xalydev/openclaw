@@ -68,6 +68,19 @@ const sourceFiles = [
 ];
 
 export function loadControlUiSourceCatalog(): TranslationMap {
+  const newSession: TranslationMap = {};
+  for (const [key, value] of Object.entries(en.newSession)) {
+    newSession[key] = value;
+    if (key === "worktree") {
+      for (const workspaceKey of [
+        "newWorkspace",
+        "newWorkspaceDescription",
+        "remoteSourceUnavailable",
+      ] as const) {
+        newSession[workspaceKey] = registerNewSessionSetupEnglish.catalog.newSession[workspaceKey];
+      }
+    }
+  }
   const boardWidget: TranslationMap = {};
   for (const [key, value] of Object.entries(en.board.widget)) {
     boardWidget[key] = value;
@@ -83,6 +96,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     {
       ...en,
       board: { ...en.board, widget: boardWidget },
+      newSession,
       debug: registerDebugEnglish.catalog.debug,
       desktop: registerDesktopEnglish.catalog.desktop,
     },
