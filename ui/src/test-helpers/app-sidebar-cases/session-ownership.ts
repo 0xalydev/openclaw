@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
+import { openOwnerMenu, selectSessionMenuValue } from "../app-sidebar-menu.ts";
 import {
   createGateway,
   createGatewayHarness,
@@ -14,34 +15,6 @@ import {
   setEffectiveOwner,
 } from "./session-ownership-avatars.ts";
 import "../../components/app-sidebar.ts";
-
-async function openOwnerMenu(sidebar: SidebarLifecycleState): Promise<HTMLElement> {
-  const trigger = sidebar.querySelector<HTMLButtonElement>(".sidebar-session-sort");
-  if (!trigger) {
-    throw new Error("expected session sort trigger");
-  }
-  trigger.click();
-  await sidebar.updateComplete;
-  const menu = sidebar.querySelector<HTMLElement>(".sidebar-session-sort-menu");
-  if (!menu) {
-    throw new Error("expected session sort menu");
-  }
-  return menu;
-}
-
-export async function selectSessionMenuValue(sidebar: SidebarLifecycleState, value: string) {
-  const menu = await openOwnerMenu(sidebar);
-  expect(menu.querySelector(`[value="${value}"]`)).not.toBeNull();
-  menu.dispatchEvent(
-    new CustomEvent("wa-select", {
-      bubbles: true,
-      detail: { item: { value } },
-    }),
-  );
-  await sidebar.updateComplete;
-  await waitForFast(() => expect(sidebar.sessionData.sessionsLoading).toBe(false));
-  await sidebar.updateComplete;
-}
 
 async function expectSort(sidebar: SidebarLifecycleState, mode: string, keys: string[]) {
   await selectSessionMenuValue(sidebar, `sort:${mode}`);

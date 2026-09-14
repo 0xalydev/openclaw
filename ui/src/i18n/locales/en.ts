@@ -5,8 +5,22 @@ import * as agentEn from "./en-agents.ts";
 
 export const en: TranslationMap & {
   board: TranslationMap & { widget: TranslationMap };
-  chat: TranslationMap & { backgroundTasks: TranslationMap };
   browser: TranslationMap & { errors: TranslationMap };
+  chat: TranslationMap & {
+    backgroundTasks: TranslationMap;
+    messages: TranslationMap &
+      Record<
+        | "copySelection"
+        | "replyingTo"
+        | "message"
+        | "showLess"
+        | "showMore"
+        | "tooLargeToDisplay"
+        | "toolSender"
+        | "errorSender",
+        string
+      >;
+  };
   configPage: TranslationMap;
   connection: TranslationMap;
   configView: TranslationMap;
@@ -4717,38 +4731,13 @@ export const en: TranslationMap & {
     },
     messages: {
       copySelection: "Copy",
-      copyLink: "Copy link",
-      copyFileName: "Copy file name",
-      forkFromHere: "Fork from here",
-      reply: "Reply",
-      replyToMessage: "Reply to message",
       replyingTo: "Replying to {name}",
-      originalUnavailable: "The original message is unavailable.",
       message: "message",
-      currentMessage: "current message",
-      actions: "Message actions",
-      selectionActions: "Selection actions",
-      askInSideChat: "Ask in side chat",
-      addToChat: "Add to chat",
-      rewind: "Rewind",
-      rewindConfirm: "Rewind to before this message?",
-      dontAskAgain: "Don't ask again",
-      rewindToHere: "Rewind to here",
-      rewindUnavailable: "Rewind is unavailable while the agent is working",
-      forkUnavailable: "Fork is unavailable while the agent is working",
       showLess: "Show less",
       showMore: "Show more",
       tooLargeToDisplay: "This message is too large to display here.",
-      unknownDate: "Unknown date",
       toolSender: "Tool",
       errorSender: "Error",
-      forwardedFrom: "From",
-      forwardedFromAgent: "Forwarded from {agentId}",
-      forwardedMessage: "Forwarded message",
-      fullContentLoadExhausted: "Could not load the full message.",
-      voiceNote: "Voice note",
-      duplicatesCollapsed: "{count} consecutive identical messages collapsed",
-      contextFor: "Message context for {timestamp}",
     },
     mediaPlayer: {
       play: "Play",

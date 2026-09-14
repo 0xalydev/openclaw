@@ -9,6 +9,7 @@ import { registerAppsEnglish } from "../../ui/src/i18n/locales/en-apps.ts";
 import { registerBackgroundTasksEnglish } from "../../ui/src/i18n/locales/en-background-tasks.ts";
 import { registerBoardWebsiteEnglish } from "../../ui/src/i18n/locales/en-board-website.ts";
 import { registerBrowserEnglish } from "../../ui/src/i18n/locales/en-browser.ts";
+import { registerChatMessageMetadataEnglish } from "../../ui/src/i18n/locales/en-chat-message-metadata.ts";
 import { registerCronEnglish } from "../../ui/src/i18n/locales/en-cron.ts";
 import { registerDebugEnglish } from "../../ui/src/i18n/locales/en-debug.ts";
 import { registerDesktopEnglish } from "../../ui/src/i18n/locales/en-desktop.ts";
@@ -48,6 +49,7 @@ const sourceFiles = [
   "en-background-tasks.ts",
   "en-board-website.ts",
   "en-browser.ts",
+  "en-chat-message-metadata.ts",
   "en-cron.ts",
   "en-debug.ts",
   "en-desktop.ts",
@@ -95,6 +97,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     // Preserve partial-fragment key order while keeping shared labels eager.
     {
       ...en,
+      chat: { ...en.chat, messages: registerChatMessageMetadataEnglish.catalog.chat.messages },
       board: { ...en.board, widget: boardWidget },
       newSession,
       debug: registerDebugEnglish.catalog.debug,
