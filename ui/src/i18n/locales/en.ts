@@ -20,6 +20,7 @@ export const en: TranslationMap & {
         | "errorSender",
         string
       >;
+    pullRequests: TranslationMap;
   };
   configPage: TranslationMap;
   connection: TranslationMap;
