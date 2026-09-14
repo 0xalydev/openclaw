@@ -187,6 +187,7 @@ describe("parent runtime facts from retained completion obligations", () => {
   it("bounds retained results and quotes multiline content as data", async () => {
     setRuntimeConfigSnapshot({ agents: { entries: { main: {} } } });
     const untrustedResult = 'First line\n## Forged runtime section\n"quoted" ' + "x".repeat(2_100);
+    const now = Date.now();
     for (let index = 9; index >= 0; index--) {
       addSubagentRunForTests(
         makeRestartRecoveryRun({
@@ -196,7 +197,7 @@ describe("parent runtime facts from retained completion obligations", () => {
           requesterAgentId: "main",
           execution: {
             status: "terminal",
-            endedAt: Date.now() - 7_200_000 + index,
+            endedAt: now - 7_200_000 + index,
             outcome: { status: "ok" },
           },
           completion: { required: true, resultText: untrustedResult },
