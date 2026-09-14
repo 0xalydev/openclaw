@@ -29,6 +29,7 @@ import { registerSessionPlacementEnglish } from "../../ui/src/i18n/locales/en-se
 import { registerSettingsEnglish } from "../../ui/src/i18n/locales/en-settings.ts";
 import { registerSkillLibraryEnglish } from "../../ui/src/i18n/locales/en-skill-library.ts";
 import { registerSkillWorkshopEnglish } from "../../ui/src/i18n/locales/en-skill-workshop.ts";
+import { registerSystemsEnglish } from "../../ui/src/i18n/locales/en-systems.ts";
 import { registerTranscriptsEnglish } from "../../ui/src/i18n/locales/en-transcripts.ts";
 import { registerUpdateActionsEnglish } from "../../ui/src/i18n/locales/en-update-actions.ts";
 import { en } from "../../ui/src/i18n/locales/en.ts";
@@ -73,6 +74,7 @@ const sourceFiles = [
   "en-settings.ts",
   "en-skill-library.ts",
   "en-skill-workshop.ts",
+  "en-systems.ts",
   "en-update-actions.ts",
   "en-transcripts.ts",
 ];
@@ -132,6 +134,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerPluginManagementEnglish.catalog,
     registerSettingsEnglish.catalog,
     registerSkillWorkshopEnglish.catalog,
+    registerSystemsEnglish.catalog,
     registerUpdateActionsEnglish.catalog,
     registerTranscriptsEnglish.catalog,
     loadControlUiCoreHintCatalog(),
