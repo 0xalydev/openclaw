@@ -10,7 +10,7 @@ import { parseRetryAfterHeaderSeconds, retryAsync } from "openclaw/plugin-sdk/re
 import { sleepWithAbort } from "openclaw/plugin-sdk/runtime-env";
 import { fetchWithRuntimeDispatcher } from "openclaw/plugin-sdk/runtime-fetch";
 
-type SlackProxyDispatcher = ReturnType<typeof createHttp1EnvHttpProxyAgent>;
+export type SlackProxyDispatcher = ReturnType<typeof createHttp1EnvHttpProxyAgent>;
 export type SlackLookupClientOptions = Pick<
   WebClientOptions,
   "fetch" | "slackApiUrl" | "teamId" | "timeout"
@@ -55,6 +55,23 @@ export function resolveSlackProxyDispatcher(): SlackProxyDispatcher | undefined 
   } catch {
     // Malformed proxy URL; degrade gracefully to direct connections.
     return undefined;
+  }
+}
+
+const DIRECT_SLACK_DISPATCHER_OPTIONS = {
+  httpProxy: "",
+  httpsProxy: "",
+  noProxy: "*",
+};
+
+/** Create a probe-owned dispatcher so timeout cleanup can retire every socket. */
+export function createSlackProbeDispatcher(timeoutMs: number): SlackProxyDispatcher {
+  const options = resolveEnvHttpProxyAgentOptions() ?? DIRECT_SLACK_DISPATCHER_OPTIONS;
+  try {
+    return createHttp1EnvHttpProxyAgent(options, timeoutMs, process.env);
+  } catch {
+    // Invalid ambient proxy settings must not prevent a direct health check.
+    return createHttp1EnvHttpProxyAgent(DIRECT_SLACK_DISPATCHER_OPTIONS, timeoutMs, {});
   }
 }
 
