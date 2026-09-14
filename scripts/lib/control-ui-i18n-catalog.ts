@@ -16,6 +16,7 @@ import { registerDebugEnglish } from "../../ui/src/i18n/locales/en-debug.ts";
 import { registerDesktopEnglish } from "../../ui/src/i18n/locales/en-desktop.ts";
 import { registerDevicesEnglish } from "../../ui/src/i18n/locales/en-devices.ts";
 import { registerDreamingEnglish } from "../../ui/src/i18n/locales/en-dreaming.ts";
+import { registerGitHubPreviewEnglish } from "../../ui/src/i18n/locales/en-github-preview.ts";
 import { registerLoginEnglish } from "../../ui/src/i18n/locales/en-login.ts";
 import { registerMeetingsEnglish } from "../../ui/src/i18n/locales/en-meetings.ts";
 import { registerMemoryImportEnglish } from "../../ui/src/i18n/locales/en-memory-import.ts";
@@ -59,6 +60,7 @@ const sourceFiles = [
   "en-desktop.ts",
   "en-devices.ts",
   "en-dreaming.ts",
+  "en-github-preview.ts",
   "en-login.ts",
   "en-meetings.ts",
   "en-memory-import.ts",
@@ -118,6 +120,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerCronEnglish.catalog,
     registerDevicesEnglish.catalog,
     registerDreamingEnglish.catalog,
+    registerGitHubPreviewEnglish.catalog,
     registerLoginEnglish.catalog,
     registerMeetingsEnglish.catalog,
     registerMemoryImportEnglish.catalog,
