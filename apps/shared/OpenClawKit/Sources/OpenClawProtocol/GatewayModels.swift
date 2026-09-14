@@ -15092,6 +15092,36 @@ public struct SessionVisibilitySetResult: Codable, Sendable {
     }
 }
 
+public struct SessionWorkspaceRecoveryRequiredErrorDetails: Codable, Sendable {
+    public let code: String
+    public let cause: String
+    public let recoveryaction: String
+    public let sessionid: String
+    public let source: [String: AnyCodable]
+
+    public init(
+        code: String,
+        cause: String,
+        recoveryaction: String,
+        sessionid: String,
+        source: [String: AnyCodable])
+    {
+        self.code = code
+        self.cause = cause
+        self.recoveryaction = recoveryaction
+        self.sessionid = sessionid
+        self.source = source
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case cause
+        case recoveryaction = "recoveryAction"
+        case sessionid = "sessionId"
+        case source
+    }
+}
+
 public struct SessionWorktreeInfo: Codable, Sendable {
     public let id: String
     public let path: String
@@ -26441,6 +26471,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
     case wizardNotFound(WizardNotFoundErrorDetails)
     case setupAdmissionBusy(SetupAdmissionBusyErrorDetails)
     case githubPublicationSelectionRejected(GitHubPublicationSelectionRejectedErrorDetails)
+    case sessionWorkspaceRecoveryRequired(SessionWorkspaceRecoveryRequiredErrorDetails)
 
     public init(code: String, missingscope: String, requiredscopes: [String]) {
         self = .missingScope(
@@ -26465,6 +26496,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
         case .wizardNotFound(let value): value.code
         case .setupAdmissionBusy(let value): value.code
         case .githubPublicationSelectionRejected(let value): value.code
+        case .sessionWorkspaceRecoveryRequired(let value): value.code
         }
     }
 
@@ -26497,6 +26529,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
         case "WIZARD_NOT_FOUND": self = try .wizardNotFound(WizardNotFoundErrorDetails(from: decoder))
         case "SETUP_ADMISSION_BUSY": self = try .setupAdmissionBusy(SetupAdmissionBusyErrorDetails(from: decoder))
         case "GITHUB_PUBLICATION_SELECTION_REJECTED": self = try .githubPublicationSelectionRejected(GitHubPublicationSelectionRejectedErrorDetails(from: decoder))
+        case "SESSION_WORKSPACE_RECOVERY_REQUIRED": self = try .sessionWorkspaceRecoveryRequired(SessionWorkspaceRecoveryRequiredErrorDetails(from: decoder))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .discriminator,
@@ -26519,6 +26552,7 @@ public enum GatewayErrorDetails: Codable, Sendable {
         case .wizardNotFound(let value): try value.encode(to: encoder)
         case .setupAdmissionBusy(let value): try value.encode(to: encoder)
         case .githubPublicationSelectionRejected(let value): try value.encode(to: encoder)
+        case .sessionWorkspaceRecoveryRequired(let value): try value.encode(to: encoder)
         }
     }
 }
