@@ -807,7 +807,7 @@ describe("chat typing status", () => {
         { id: "zoe", label: "Zoe" },
       ],
       expectedText: "Ayaan, Liam, Maya, Zoe are typing…",
-      expectedAvatars: 3,
+      expectedAvatars: 4,
     },
   ])("renders $expectedText in the transcript", ({ actors, expectedText, expectedAvatars }) => {
     const container = renderChatView({ typingActors: actors });
@@ -815,9 +815,14 @@ describe("chat typing status", () => {
 
     expect(indicator?.closest('[data-virtual-row-key="presence:typing"]')).not.toBeNull();
     expect(indicator?.closest(".agent-chat__composer-shell")).toBeNull();
-    expect(indicator?.querySelectorAll(".chat-avatar")).toHaveLength(expectedAvatars);
     expect(
-      indicator?.querySelector(".agent-chat__typing-avatars")?.getAttribute("aria-hidden"),
+      indicator?.querySelectorAll(
+        ".chat-message-avatar-anchor > :is(.chat-avatar, .chat-avatar-slot), .chat-group-footer .chat-author-avatar",
+      ),
+    ).toHaveLength(expectedAvatars);
+    expect(indicator?.querySelectorAll(".agent-chat__typing-state")).toHaveLength(actors.length);
+    expect(
+      indicator?.querySelector(".agent-chat__typing-bubble")?.getAttribute("aria-hidden"),
     ).toBe("true");
     expect(indicator?.textContent).toContain(expectedText);
   });
