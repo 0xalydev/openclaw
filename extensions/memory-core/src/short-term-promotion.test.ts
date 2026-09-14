@@ -1346,7 +1346,7 @@ describe("short-term promotion", () => {
     }
   });
 
-  it("keeps recent valid recall stats ahead of malformed timestamps at the entry cap", async (workspaceDir) => {
+  it("keeps valid recall and promotion stats with malformed timestamps at the entry cap", async (workspaceDir) => {
     const nowMs = Date.parse("2026-04-05T10:00:00.000Z");
     const malformedEntries = Object.fromEntries(
       Array.from({ length: 8 }, (_, index) => {
@@ -1379,6 +1379,26 @@ describe("short-term promotion", () => {
       updatedAt: "2026-04-05T10:00:00.000Z",
       entries: {
         ...malformedEntries,
+        malformedPromotion: recallStoreEntryFixture({
+          key: "malformedPromotion",
+          path: "memory/2026-04-01-malformed-promotion.md",
+          promotedAt: "not-a-timestamp",
+        }),
+        previousDay: recallStoreEntryFixture({
+          key: "previousDay",
+          path: "memory/2026-04-04-previous-day.md",
+          promotedAt: "2026-04-04T18:00:00.000Z",
+        }),
+        utcDay: recallStoreEntryFixture({
+          key: "utcDay",
+          path: "memory/2026-04-05-utc-day.md",
+          promotedAt: "2026-04-05T06:00:00.000Z",
+        }),
+        today: recallStoreEntryFixture({
+          key: "today",
+          path: "memory/2026-04-05-today.md",
+          promotedAt: "2026-04-05T09:00:00.000Z",
+        }),
         recent: {
           key: "recent",
           path: "memory/2026-04-05-recent.md",
@@ -1408,6 +1428,26 @@ describe("short-term promotion", () => {
     expect(stats.shortTermEntries.map((entry) => entry.path)).not.toContain(
       "memory/2026-04-01-malformed-7.md",
     );
+    expect(stats.promotedEntries).toHaveLength(4);
+    expect(stats.promotedEntries).toContainEqual(
+      expect.objectContaining({ key: "malformedPromotion", promotedAt: "not-a-timestamp" }),
+    );
+    for (const [timezone, promotedToday] of [
+      ["America/Los_Angeles", 1],
+      ["UTC", 2],
+      ["America/Los_Angeles", 1],
+    ] as const) {
+      const zonedStats = await loadShortTermPromotionDreamingStats({
+        workspaceDir,
+        nowMs,
+        timezone,
+      });
+      expect(zonedStats).toMatchObject({
+        promotedTotal: 4,
+        promotedToday,
+        lastPromotedAt: "2026-04-05T09:00:00.000Z",
+      });
+    }
   });
 
   it("reconciles existing promotion markers instead of appending duplicates", async (workspaceDir) => {
