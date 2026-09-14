@@ -4160,6 +4160,7 @@ wa-dropdown-item.sidebar-agent-menu__agent-switch:focus-visible {
 
 .sidebar-agent-menu__agent-tile .agent-select__option-label {
   display: -webkit-box;
+  width: 100%;
   overflow: hidden;
   line-height: 1.25;
   text-overflow: ellipsis;
