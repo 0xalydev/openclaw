@@ -16,6 +16,10 @@ import type { SqliteWorkerBackend } from "../infra/sqlite-worker-contract.js";
 import { getSqliteWorkerStateContext } from "../infra/sqlite-worker-state-context.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { readPluginMetadataStateRowSync } from "../plugins/installed-plugin-index-row.js";
+import {
+  ensureProjectRegistrySchema,
+  resolveRecordedProjectRootInDatabase,
+} from "../projects/project-registry.kernel.js";
 import { mapTaskFlowView } from "../tasks/task-domain-views.js";
 import { runManagedTaskInFlowInDatabase } from "../tasks/task-flow-managed-run-task.kernel.js";
 import type { RunTaskInFlowResult } from "../tasks/task-flow-managed-run-task.types.js";
@@ -297,6 +301,10 @@ function createSharedStateWorkerBackend(
         path: context.databasePath,
         env: getSqliteWorkerStateContext().environment,
       };
+      if (command.type === "projects.findRoot") {
+        ensureProjectRegistrySchema(writeOptions);
+        return resolveRecordedProjectRootInDatabase(database.db, command.input.repoRoot);
+      }
       if (command.type === "config.health.patch") {
         const { configPath, patch, expected, updatedAtMs } = command.input;
         return runOpenClawStateWriteTransaction(({ db }) => {
