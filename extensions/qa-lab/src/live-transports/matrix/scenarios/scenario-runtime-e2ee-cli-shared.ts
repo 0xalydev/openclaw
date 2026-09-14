@@ -76,40 +76,21 @@ export function isMatrixQaCliBackupUsable(
   );
 }
 
-function parseMatrixQaCliJsonText(text: string): unknown {
-  const candidate = text.trim();
-  if (!candidate) {
-    throw new Error("no JSON payload found");
-  }
-  return JSON.parse(candidate) as unknown;
-}
-
 export function parseMatrixQaCliJson(result: MatrixQaCliRunResult): unknown {
   const stdout = result.stdout.trim();
   const stderr = result.stderr.trim();
-  if (stdout) {
-    try {
-      return parseMatrixQaCliJsonText(stdout);
-    } catch (error) {
-      throw new Error(
-        `${formatMatrixQaCliCommand(result.args)} printed invalid JSON: ${
-          error instanceof Error ? error.message : String(error)
-        }\nstdout:\n${redactMatrixQaCliOutput(stdout)}`,
-        { cause: error },
-      );
-    }
-  }
-
-  if (!stderr) {
+  // Nonempty stdout is authoritative, including malformed failure payloads.
+  const payload = stdout || stderr;
+  if (!payload) {
     throw new Error(`${formatMatrixQaCliCommand(result.args)} did not print JSON`);
   }
   try {
-    return parseMatrixQaCliJsonText(stderr);
+    return JSON.parse(payload) as unknown;
   } catch (error) {
     throw new Error(
       `${formatMatrixQaCliCommand(result.args)} printed invalid JSON: ${
         error instanceof Error ? error.message : String(error)
-      }\nstderr:\n${redactMatrixQaCliOutput(stderr)}`,
+      }\n${stdout ? "stdout" : "stderr"}:\n${redactMatrixQaCliOutput(payload)}`,
       { cause: error },
     );
   }
