@@ -671,6 +671,7 @@ describe("chat transcript controller", () => {
         },
         {
           onViewportResize,
+          canFollowEnd: () => !policy.chatFollowLocked,
           onReaderScroll: (towardEnd) => handleChatScrollTakeover(policy, towardEnd),
         },
       );
@@ -855,9 +856,15 @@ describe("chat transcript controller", () => {
     }
   });
 
-  it.each([0, 8, 50])(
-    "follows appended typing only within 8px of the real end (distance=%s)",
-    async (distance) => {
+  it.each([
+    { distance: 0, followEnabled: true },
+    { distance: 8, followEnabled: true },
+    { distance: 50, followEnabled: true },
+    { distance: 0, followEnabled: false },
+    { distance: 8, followEnabled: false },
+  ])(
+    "follows appended typing only when permitted near the real end ($distance, $followEnabled)",
+    async ({ distance, followEnabled }) => {
       const rows: TestContentRow[] = Array.from({ length: 12 }, (_, index) => ({
         kind: "content",
         key: `row:${index}`,
@@ -866,6 +873,15 @@ describe("chat transcript controller", () => {
       const { container, renderRows, transcript } = await mountTestTranscript(
         `typing-distance-${distance}`,
         rows,
+        new ChatTranscriptController(
+          {
+            addController: () => undefined,
+            removeController: () => undefined,
+            requestUpdate: () => undefined,
+            updateComplete: Promise.resolve(true),
+          },
+          { canFollowEnd: () => followEnabled },
+        ),
       );
       try {
         const total = transcriptSize(container);
@@ -885,7 +901,7 @@ describe("chat transcript controller", () => {
           ...rows,
           { kind: "content", key: "presence:typing", content: html`<div>Typing</div>` },
         ]);
-        if (distance <= 8) {
+        if (followEnabled && distance <= 8) {
           expect(scrollTo).toHaveBeenCalledWith({ top: total + 84 - 600, behavior: "auto" });
         } else {
           expect(scrollTo).not.toHaveBeenCalled();

@@ -318,6 +318,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   );
   protected readonly transcript = new ChatTranscriptController(this, {
     onViewportResize: () => this.chatState.handleTranscriptResize(),
+    canFollowEnd: () => this.state !== undefined && !this.state.chatFollowLocked,
     onReaderScroll: (towardEnd) => this.state && handleChatScrollTakeover(this.state, towardEnd),
   });
   protected readonly progressCard = new SessionProgressCardController(this, {
