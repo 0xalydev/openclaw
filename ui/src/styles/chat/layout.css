@@ -2148,7 +2148,11 @@ openclaw-chat-video-player {
   width: calc(100% - 36px);
   max-width: var(--chat-thread-max-width, 48rem);
   margin: 0 auto;
-  padding: 0 0 8px;
+}
+
+/* Separate peer cards still need breathing room; the composer owns its own margin. */
+.chat-prs:has(+ :is(.session-suggestions, .chat-swarm), + openclaw-plugin-contributions > *) {
+  padding-bottom: 8px;
 }
 
 .chat-pr {

@@ -1721,15 +1721,16 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
     });
   });
 
-  it("aligns mobile cards with the composer after Chat styles load", async () => {
+  it("aligns and separates mobile cards above the composer after Chat styles load", async () => {
     await withBrowserPage(openBrowserPage(390, 844), async (page) => {
       // New Session can load composer styles before Chat's lazy layout stylesheet.
       await page.setContent(`<style>${readUiCss()}${readStyleSheet("ui/src/styles/chat/layout.css")}</style>
         <section class="card chat"><div class="chat-main__conversation">
           <div class="chat-inline-approval">Approval</div>
-          <div class="chat-prs">Pull request</div>
+          <div class="chat-prs"><article class="chat-pr">Pull request</article></div>
           <div class="session-suggestions">Suggestion</div>
           <div class="chat-swarm">Parallel task</div>
+          <openclaw-plugin-contributions><button data-plugin-action>Plugin action</button></openclaw-plugin-contributions>
           <div class="agent-chat__composer-shell"><div class="agent-chat__input">Composer</div></div>
         </div></section>`);
       await page.locator(".card.chat").evaluate(finishElementAnimations);
@@ -1743,6 +1744,12 @@ describeBrowserLayout.concurrent("chat responsive browser layout", () => {
         const card = await getRect(page, selector);
         expect(card.left, selector).toBeCloseTo(composer.left, 0);
         expect(card.right, selector).toBeCloseTo(composer.right, 0);
+      }
+      for (const selector of [".session-suggestions", ".chat-swarm", "[data-plugin-action]"]) {
+        const pullRequest = await getRect(page, ".chat-pr");
+        const neighbor = await getRect(page, selector);
+        expect(neighbor.top - pullRequest.bottom, selector).toBeGreaterThanOrEqual(8);
+        await page.locator(selector).evaluate((element) => element.remove());
       }
     });
   });
