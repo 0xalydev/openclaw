@@ -1,11 +1,7 @@
 // Per-session virtualizer host: scroll anchoring, measurement, and row sync
 // for one transcript. Owned and swapped by ChatTranscriptController.
 import { VirtualizerController } from "@tanstack/lit-virtual";
-import {
-  type Range,
-  measureElement as measureVirtualElement,
-  observeElementRect,
-} from "@tanstack/virtual-core";
+import { type Range, observeElementRect } from "@tanstack/virtual-core";
 import {
   nothing,
   type ReactiveController,
@@ -31,6 +27,7 @@ import {
   initialTranscriptRect,
   maxTranscriptScrollOffset,
   measureConnectedTranscriptRows,
+  measureTranscriptRow,
   resolveTranscriptScrollMargin,
   PositionRailGutterController,
   syncScrollMargin,
@@ -289,7 +286,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
           instance,
           callback,
         ),
-      measureElement: measureVirtualElement,
+      measureElement: measureTranscriptRow,
       rangeExtractor: (range) => this.extractAnchoredRange(range, this.rowIndexesByKey),
       // Virtual distance omits real padding, pinning readers ~80px up past scroll.ts's follow-lock.
       // scheduleCommittedChatScroll owns end-follow on content changes and source: "resize".
@@ -533,6 +530,9 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
           scrollElementRef: this.scrollElementRef,
           captureInteractionResize: this.captureInteractionResize,
           measureRowRefFor: (key) => this.measureRowRefFor(key),
+          measureRows:
+            this.offsetState.scrollCommand?.target === "message" ||
+            this.offsetState.scrollCommand?.target === "index",
         });
       },
       () => {
