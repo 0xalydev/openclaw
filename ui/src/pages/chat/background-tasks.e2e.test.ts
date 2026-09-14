@@ -102,13 +102,12 @@ const runningExec = {
   kind: "exec",
   runtime: "cli",
   status: "running",
-  title: "CLI command",
+  title: "pnpm run build",
   agentId: "main",
   ownerKey: chatSessionKey,
   createdAt: baseTime - 2_000,
   updatedAt: baseTime,
   startedAt: baseTime - 2_000,
-  progressSummary: "Command running",
 };
 
 suite.define(() => {
@@ -840,6 +839,7 @@ suite.define(() => {
   });
 
   it("shows one detached exec after the agent turn ends", async () => {
+    const proofDir = createControlUiE2eArtifactDir("chat-detached-exec");
     await suite.withPage(
       {
         locale: "en-US",
@@ -898,17 +898,20 @@ suite.define(() => {
         expect(Math.abs(previewCenter - linkCenter)).toBeLessThanOrEqual(2);
         expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(linkBox.y);
         await page.screenshot({
-          path: path.join(artifactDir, "08-running-task-popover-centered.png"),
+          path: path.join(proofDir, "08-running-task-popover-centered.png"),
           fullPage: true,
         });
 
         await openChatSidePanelType(page, "Tasks");
         const row = page.locator('[data-task-id="task-exec"]');
         await row.waitFor({ state: "visible" });
-        expect(await row.textContent()).toContain("CLI command");
-        expect(await row.textContent()).toContain("Command running");
+        expect(await row.locator(".chat-tasks-rail__task-title").textContent()).toBe(
+          "pnpm run build",
+        );
+        expect(await row.locator(".chat-tasks-rail__task-status").textContent()).toBe("Running");
+        expect(await row.locator(".chat-tasks-rail__task-detail").count()).toBe(0);
         await page.screenshot({
-          path: path.join(artifactDir, "09-one-background-exec.png"),
+          path: path.join(proofDir, "09-one-background-exec.png"),
           fullPage: true,
         });
       },
