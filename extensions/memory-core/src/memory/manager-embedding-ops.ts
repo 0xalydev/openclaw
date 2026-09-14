@@ -29,7 +29,10 @@ import {
 } from "openclaw/plugin-sdk/sqlite-runtime";
 import { chunkItems } from "openclaw/plugin-sdk/text-chunking";
 import { hasMemorySessionTombstone } from "../memory-session-tombstones.js";
-import { withMemoryWorkspaceLock } from "../memory-workspace-lock.js";
+import {
+  withMemoryWorkspaceLock,
+  withMemoryWorkspacePreparation,
+} from "../memory-workspace-lock.js";
 import { readSessionResetRecallCutoffMetadata } from "../session-reset-recall-metadata.js";
 import type { EmbeddingProvider } from "./embeddings.js";
 import type { IndexedMemoryChunk } from "./manager-chunk-writer.js";
@@ -1021,17 +1024,20 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
     options: { source: MemorySource; content?: string },
     generation: MemorySyncProviderGeneration | null,
   ): Promise<PreparedMemoryIndexEntry | null> {
-    return await withMemoryWorkspaceLock(this.workspaceDir, async () => {
+    const source = options.source;
+    const kind = entry.kind;
+    const suppliedContent = options.content ?? entry.content;
+    const prepare = async (): Promise<PreparedMemoryIndexEntry | null> => {
       const pathClassification = await resolveMemoryPathClassification({
         absolutePath: entry.absPath,
-        source: options.source,
+        source,
         workspaceDir: this.workspaceDir,
       });
-      if ("kind" in entry && entry.kind === "multimodal") {
+      if (kind === "multimodal") {
         const multimodalChunk = await buildMultimodalChunkForIndexing(entry);
         if (!multimodalChunk) {
           this.dirty = true;
-          await this.deleteIndexedFile(entry.path, options.source);
+          await this.deleteIndexedFile(entry.path, source);
           return null;
         }
         const chunk: IndexedMemoryChunk = {
@@ -1042,26 +1048,25 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
         };
         chunk.provenance = resolveChunkProvenance(
           entry,
-          options.source,
+          source,
           chunk,
           pathClassification.originClass,
         );
         return {
           entry,
-          source: options.source,
+          source,
           chunks: [chunk],
           structuredInputBytes: multimodalChunk.structuredInputBytes,
         };
       }
 
       const content =
-        options.content ??
-        entry.content ??
+        suppliedContent ??
         (await retryTransientMemoryRead(
           () => fs.readFile(entry.absPath, "utf-8"),
           `read memory markdown for indexing ${entry.absPath}`,
         ).catch((err: unknown) => {
-          if (options.source !== "memory" || !isFileMissingError(err)) {
+          if (source !== "memory" || !isFileMissingError(err)) {
             throw err;
           }
           return null;
@@ -1078,7 +1083,7 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
           lineMap: entry.lineMap,
           lineProvenance: entry.lineProvenance,
         },
-        source: options.source,
+        source,
         content,
         pathClassification,
         chunking: this.settings.chunking,
@@ -1092,10 +1097,13 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
       return {
         entry:
           prepared.contentHash !== undefined ? { ...entry, hash: prepared.contentHash } : entry,
-        source: options.source,
+        source,
         chunks: prepared.chunks,
       };
-    });
+    };
+    return source === "sessions" && kind !== "multimodal" && typeof suppliedContent === "string"
+      ? withMemoryWorkspacePreparation(this.workspaceDir, prepare)
+      : withMemoryWorkspaceLock(this.workspaceDir, prepare);
   }
 
   protected override async indexFiles(items: MemoryIndexWorkItem[]): Promise<void> {
