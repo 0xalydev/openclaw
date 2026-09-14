@@ -49,7 +49,13 @@ openclaw-debug-overlay-content {
   text-transform: uppercase;
 }
 
-.debug-overlay__close {
+.debug-overlay__controls {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.debug-overlay__control {
   display: grid;
   width: 30px;
   height: 30px;
@@ -63,10 +69,20 @@ openclaw-debug-overlay-content {
   border-radius: var(--radius-sm);
 }
 
-.debug-overlay__close:hover {
+.debug-overlay__control:hover {
   color: var(--text);
   background: var(--bg-hover);
   border-color: var(--border);
+}
+
+.debug-overlay__control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.debug-overlay__control svg {
+  width: 16px;
+  height: 16px;
 }
 
 .debug-overlay__body {
@@ -99,6 +115,82 @@ openclaw-debug-overlay-content {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
   }
+}
+
+.debug-overlay--minimized {
+  width: min(284px, calc(100vw - 32px));
+  height: auto;
+
+  .debug-overlay__header {
+    gap: 6px;
+    padding: 6px 8px 6px 12px;
+  }
+
+  .debug-overlay__header h2 {
+    font-size: 12px;
+  }
+
+  .debug-overlay__control {
+    width: 26px;
+    height: 26px;
+  }
+
+  .debug-overlay__body {
+    padding: 8px;
+  }
+
+  .gateway-vital--cpu {
+    min-height: 72px;
+  }
+
+  .sparkline-tile__sub {
+    display: none;
+  }
+
+  .sparkline-tile__chart svg {
+    height: 26px;
+  }
+}
+
+.debug-overlay__widget {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 12px;
+}
+
+.debug-overlay__metrics {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+
+  > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0 4px;
+  }
+
+  dt {
+    color: var(--muted);
+    font-size: 10px;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+}
+
+.debug-overlay__compact-loading {
+  display: grid;
+  min-height: 72px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .debug-overlay__placeholder-content {

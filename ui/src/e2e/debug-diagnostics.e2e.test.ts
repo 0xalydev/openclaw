@@ -192,6 +192,29 @@ suite.define(() => {
         await expect
           .poll(() => overlay.locator(".gateway-vital--cpu").textContent())
           .toContain("25%");
+        await expect.poll(() => overlay.locator(".gateway-vital--cpu polyline").count()).toBe(1);
+        if (captureUiProof) {
+          await page.screenshot({ path: path.join(proofDir, "system-busyness-expanded.png") });
+        }
+        await overlay.getByRole("button", { name: "Minimize system busyness" }).click();
+        const widget = page.locator("aside.debug-overlay--minimized");
+        await widget.waitFor();
+        expect(await widget.getByRole("heading", { name: "Lanes", exact: true }).count()).toBe(0);
+        expect(await widget.locator(".gateway-vital--cpu polyline").count()).toBe(1);
+        await expect
+          .poll(() => widget.locator(".debug-overlay__ping").textContent())
+          .toMatch(/\d+\s*ms/u);
+        await expect
+          .poll(() => widget.locator(".debug-overlay__memory").textContent())
+          .toContain("432 MB");
+        const desktopWidget = await widget.boundingBox();
+        expect(desktopWidget).not.toBeNull();
+        expect(desktopWidget!.width).toBeLessThanOrEqual(360);
+        expect(desktopWidget!.height).toBeLessThanOrEqual(240);
+        expect(1280 - desktopWidget!.x - desktopWidget!.width).toBeGreaterThanOrEqual(0);
+        expect(1280 - desktopWidget!.x - desktopWidget!.width).toBeLessThanOrEqual(32);
+        expect(1000 - desktopWidget!.y - desktopWidget!.height).toBeGreaterThanOrEqual(0);
+        expect(1000 - desktopWidget!.y - desktopWidget!.height).toBeLessThanOrEqual(32);
         await gateway.setMethodResponse("system.info", {
           ...deviceSystemInfo,
           eventLoop: {
@@ -210,12 +233,34 @@ suite.define(() => {
           },
         });
         await expect
-          .poll(() => overlay.locator(".gateway-vital--memory").textContent())
+          .poll(() => widget.locator(".debug-overlay__memory").textContent())
           .toContain("654 MB");
         await expect
-          .poll(() => overlay.locator(".gateway-vital--cpu").textContent())
+          .poll(() => widget.locator(".gateway-vital--cpu").textContent())
           .toContain("75%");
         await gateway.waitForRequest("system.info", { after: systemInfoCount + 2 });
+        expect(await widget.locator(".gateway-vital--cpu polyline").count()).toBe(1);
+        if (captureUiProof) {
+          await page.screenshot({ path: path.join(proofDir, "system-busyness-minimized.png") });
+        }
+        await page.setViewportSize({ height: 844, width: 390 });
+        const mobileWidget = await widget.boundingBox();
+        expect(mobileWidget).not.toBeNull();
+        expect(mobileWidget!.x).toBeGreaterThanOrEqual(0);
+        expect(mobileWidget!.y).toBeGreaterThanOrEqual(0);
+        expect(mobileWidget!.x + mobileWidget!.width).toBeLessThanOrEqual(390);
+        expect(mobileWidget!.y + mobileWidget!.height).toBeLessThanOrEqual(844);
+        if (captureUiProof) {
+          await page.screenshot({
+            path: path.join(proofDir, "system-busyness-minimized-mobile.png"),
+          });
+        }
+        await page.setViewportSize({ height: 1000, width: 1280 });
+        await widget.getByRole("button", { name: "Expand system busyness" }).click();
+        await widget.waitFor({ state: "detached" });
+        await expect
+          .poll(() => overlay.locator(".gateway-vital--memory").textContent())
+          .toContain("654 MB");
         expect(await overlay.locator(".gateway-vital--cpu polyline").count()).toBe(1);
         expect(
           await Promise.all(
@@ -249,7 +294,14 @@ suite.define(() => {
         if (captureUiProof) {
           await page.screenshot({ path: path.join(proofDir, "active-runs-idle.png") });
         }
+        await overlay.getByRole("button", { name: "Minimize system busyness" }).click();
+        await widget.waitFor();
+        await page.keyboard.press("ControlOrMeta+Shift+d");
+        await widget.waitFor({ state: "detached" });
+        await overlay.getByRole("heading", { name: "Lanes", exact: true }).waitFor();
+        await overlay.getByRole("button", { name: "Minimize system busyness" }).click();
         await overlay.getByRole("button", { name: "Close", exact: true }).click();
+        await overlay.waitFor({ state: "detached" });
 
         const refresh = snapshots.getByRole("button", { name: "Refresh" });
         const statusRequestCount = (await gateway.getRequests("status")).length;
@@ -272,7 +324,16 @@ suite.define(() => {
 
         await gateway.resolveDeferred("status");
         await expect.poll(() => refresh.textContent()).toMatch(/^\s*Refresh\s*$/u);
+        await page.getByRole("button", { name: /^Open overlay/u }).click();
+        await expect
+          .poll(() => overlay.locator(".gateway-vital--cpu").textContent())
+          .toContain("75%");
+        await overlay.getByRole("button", { name: "Minimize system busyness" }).click();
+        await widget.waitFor();
         await gateway.setOnline(false);
+        await expect.poll(() => widget.textContent()).toContain("Unavailable");
+        expect(await widget.textContent()).not.toContain("75%");
+        expect(await widget.textContent()).not.toContain("654 MB");
         await expect
           .poll(() => snapshots.textContent())
           .toMatch(/Offline\s+Connect to the Gateway/u);
@@ -288,6 +349,13 @@ suite.define(() => {
             path: path.join(proofDir, "offline-mobile.png"),
           });
         }
+        await page.setViewportSize({ height: 1000, width: 1280 });
+        await page.getByRole("searchbox", { name: "Search settings" }).focus();
+        await page.keyboard.press("Escape");
+        await expect.poll(() => new URL(page.url()).pathname).toBe("/chat/main");
+        expect(await widget.isVisible()).toBe(true);
+        await widget.getByRole("button", { name: "Close", exact: true }).press("Escape");
+        await overlay.waitFor({ state: "detached" });
       },
     );
   });

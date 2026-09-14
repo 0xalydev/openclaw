@@ -8,6 +8,8 @@ import type { SessionsListResult } from "../../api/types.ts";
 import type { ApplicationGateway } from "../../app/gateway.ts";
 import {
   collectGatewayStatusSamples,
+  formatGatewayMemory,
+  renderGatewayCpuVital,
   renderGatewayVitals,
   type GatewayStatusSample,
   type GatewayStatusSnapshot,
@@ -52,11 +54,35 @@ function defineDebugOverlaySection<T>(
 }
 
 export type DebugOverlayStatusSnapshot = GatewayStatusSnapshot & {
+  pingMs: number;
   disks?: SystemInfoResult["disks"];
   uptimeMs?: number;
 };
 
 export type DebugOverlayStatusSample = GatewayStatusSample<DebugOverlayStatusSnapshot>;
+
+export function renderDebugOverlayWidget(
+  status: DebugOverlayStatusSnapshot,
+  history: readonly DebugOverlayStatusSample[],
+): TemplateResult {
+  return html`<div class="debug-overlay__widget">
+    ${renderGatewayCpuVital(status, history)}
+    <dl class="debug-overlay__metrics">
+      <div class="debug-overlay__ping" title=${t("debug.overlay.pingDescription")}>
+        <dt>${t("debug.overlay.ping")}</dt>
+        <dd class="mono">
+          ${t("debug.overlay.pingMs", { value: String(Math.round(status.pingMs)) })}
+        </dd>
+      </div>
+      <div class="debug-overlay__memory">
+        <dt>${t("debug.overlay.memory")}</dt>
+        <dd class="mono">
+          ${status.processMemory ? formatGatewayMemory(status.processMemory.rssBytes) : t("common.na")}
+        </dd>
+      </div>
+    </dl>
+  </div>`;
+}
 
 function renderLanes(diagnostics: CommandLaneDiagnostics): TemplateResult {
   return html`
@@ -172,8 +198,11 @@ export const DEBUG_OVERLAY_SECTIONS: readonly DebugOverlaySectionDescriptor[] = 
   }),
   defineDebugOverlaySection({
     ...DEBUG_OVERLAY_SECTION_HEADERS.status,
-    load: (context, signal) =>
-      context.client.request<SystemInfoResult>("system.info", {}, { signal }),
+    load: async (context, signal): Promise<DebugOverlayStatusSnapshot> => {
+      const startedAt = performance.now();
+      const status = await context.client.request<SystemInfoResult>("system.info", {}, { signal });
+      return { ...status, pingMs: performance.now() - startedAt };
+    },
     render: renderStatus,
   }),
   defineDebugOverlaySection({

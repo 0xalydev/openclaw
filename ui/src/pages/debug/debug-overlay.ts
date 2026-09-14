@@ -14,6 +14,7 @@ import {
   readLazyShellAction,
 } from "../../app/lazy-shell-action.ts";
 import { retryStaleChunkReloadWhenReachable } from "../../app/stale-chunk-reload.ts";
+import { toolIcons } from "../../components/icons-tools.ts";
 import { renderLazyViewError } from "../../components/lazy-view-error.ts";
 import { DEBUG_OVERLAY_REQUEST_EVENT } from "../../components/panel-toggle-contract.ts";
 import { t } from "../../i18n/index.ts";
@@ -33,7 +34,7 @@ export class DebugOverlay extends OpenClawLightDomElement {
   @consume({ context: applicationContext, subscribe: true })
   private context?: ApplicationContext;
 
-  @litState() private open = false;
+  @litState() private mode: "closed" | "expanded" | "minimized" = "closed";
 
   private contentKey = 0;
   private recoveryActionPending = false;
@@ -57,11 +58,15 @@ export class DebugOverlay extends OpenClawLightDomElement {
   }
 
   toggle(): void {
-    if (this.open) {
+    if (this.mode === "minimized") {
+      this.mode = "expanded";
+      return;
+    }
+    if (this.mode === "expanded") {
       this.close();
       return;
     }
-    this.open = true;
+    this.mode = "expanded";
     this.contentKey += 1;
     document.addEventListener("keydown", this.handleKeydown, true);
     if (!isOptionalElementDefined(DEBUG_OVERLAY_CONTENT)) {
@@ -77,12 +82,15 @@ export class DebugOverlay extends OpenClawLightDomElement {
     if (event.key !== "Escape" || event.defaultPrevented) {
       return;
     }
+    if (this.mode === "minimized" && !event.composedPath().includes(this)) {
+      return;
+    }
     event.preventDefault();
     this.close();
   };
 
   private readonly close = (): void => {
-    this.open = false;
+    this.mode = "closed";
     document.removeEventListener("keydown", this.handleKeydown, true);
     this.content.close();
     this.clearRecoveryAction();
@@ -110,35 +118,56 @@ export class DebugOverlay extends OpenClawLightDomElement {
       });
     }
     if (!isOptionalElementDefined(DEBUG_OVERLAY_CONTENT)) {
-      return renderDebugOverlayLoading();
+      return this.mode === "minimized"
+        ? html`<div class="debug-overlay__compact-loading" role="status">
+            ${t("common.loading")}
+          </div>`
+        : renderDebugOverlayLoading();
     }
     return keyed(
       this.contentKey,
       html`<openclaw-debug-overlay-content
         .context=${this.context}
+        .minimized=${this.mode === "minimized"}
       ></openclaw-debug-overlay-content>`,
     );
   }
 
   override render() {
-    if (!this.open) {
+    if (this.mode === "closed") {
       return nothing;
     }
     return html`
-      <aside class="debug-overlay" aria-label=${t("debug.overlay.title")}>
+      <aside
+        class="debug-overlay ${this.mode === "minimized" ? "debug-overlay--minimized" : ""}"
+        aria-label=${t("debug.overlay.title")}
+      >
         <header class="debug-overlay__header">
           <div>
-            <div class="debug-overlay__eyebrow">${t("debug.overlay.eyebrow")}</div>
+            ${this.mode === "minimized" ? nothing : html`<div class="debug-overlay__eyebrow">${t("debug.overlay.eyebrow")}</div>`}
             <h2>${t("debug.overlay.title")}</h2>
           </div>
-          <button
-            type="button"
-            class="debug-overlay__close"
-            aria-label=${t("common.close")}
-            @click=${this.close}
-          >
-            ×
-          </button>
+          <div class="debug-overlay__controls">
+            <button
+              type="button"
+              class="debug-overlay__control"
+              aria-label=${t(this.mode === "minimized" ? "debug.overlay.expand" : "debug.overlay.minimize")}
+              title=${t(this.mode === "minimized" ? "debug.overlay.expand" : "debug.overlay.minimize")}
+              @click=${() => {
+                this.mode = this.mode === "minimized" ? "expanded" : "minimized";
+              }}
+            >
+              ${this.mode === "minimized" ? toolIcons.maximize : toolIcons.minimize}
+            </button>
+            <button
+              type="button"
+              class="debug-overlay__control debug-overlay__close"
+              aria-label=${t("common.close")}
+              @click=${this.close}
+            >
+              ×
+            </button>
+          </div>
         </header>
         <div class="debug-overlay__body">${this.renderContent()}</div>
       </aside>

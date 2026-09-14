@@ -15,6 +15,8 @@ export const en: TranslationMap & {
       Record<
         | "title"
         | "eyebrow"
+        | "minimize"
+        | "expand"
         | "lanes"
         | "status"
         | "activeRuns"
@@ -1649,6 +1651,8 @@ export const en: TranslationMap & {
     overlay: {
       title: "System busyness",
       eyebrow: "Live diagnostics",
+      minimize: "Minimize system busyness",
+      expand: "Expand system busyness",
       lanes: "Lanes",
       status: "Event loop / status",
       activeRuns: "Active runs",
