@@ -2154,6 +2154,13 @@ openclaw-settings-save-indicator:empty {
   color: inherit;
 }
 
+/* Session rows sit flush with the horizontal clip that protects the sidebar
+   scroller. Keep their focus outline inside the link box so its leading edge
+   remains visible. */
+.sidebar-recent-session__link:focus-visible {
+  outline-offset: -2px;
+}
+
 .sidebar-child-session-toggle {
   display: inline-flex;
   align-items: center;
