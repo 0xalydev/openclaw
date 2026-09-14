@@ -90,6 +90,8 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   // Disconnect releases the waiter so reconnect can schedule in its new lifecycle.
   private hiddenUpdateResume: (() => void) | undefined;
   private readonly handleVisibilityChange = () => {
+    // Lit parks hidden updates, but progress watches must follow visibility immediately.
+    this.progressCard.hostUpdate();
     if (document.visibilityState !== "hidden") {
       this.hiddenUpdateResume?.();
       return;
@@ -211,6 +213,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
     const wasConversationPresented = this.conversationPresented;
     this.headerPresentationGeneration += 1;
     this.presentedValue = value;
+    this.progressCard.hostUpdate();
     this.requestUpdate("presented", previous);
     this.presentedChanged(value);
     this.notifyConversationPresentation(wasConversationPresented);
@@ -326,7 +329,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
     gateway: () => this.context?.gateway,
     target: () => {
       const state = this.state;
-      if (!state || this.isCurrentSessionArchived(state)) {
+      if (!state || this.isCurrentSessionArchived(state) || !this.secondarySessionReadsReady()) {
         return undefined;
       }
       return this.resolveChatReadTarget();
@@ -716,6 +719,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   ): boolean;
   protected abstract publishHeaderError(error: unknown, owner?: string): void;
   protected abstract probeSessionDiscussion(sessionKey: string): Promise<void>;
+  protected abstract secondarySessionReadsReady(explicit?: boolean): boolean;
   protected abstract loadHeaderPlatform(
     client: GatewayBrowserClient,
     generation: number,
