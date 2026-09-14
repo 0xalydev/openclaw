@@ -1,8 +1,9 @@
 // Vitest ui e2e config wires the ui e2e test shard.
 import { defineConfig, type TestUserConfig } from "vitest/config";
+import { intersectIncludePatterns } from "./vitest.include-patterns.ts";
 import {
-  intersectIncludePatterns,
   loadPatternListFromEnv,
+  matchesVitestGlob,
   narrowIncludePatternsForCli,
 } from "./vitest.pattern-file.ts";
 import { sharedVitestConfig } from "./vitest.shared.config.ts";
@@ -141,7 +142,9 @@ export function createUiE2eVitestConfig(
     includeFromEnv ??
     narrowIncludePatternsForCli(uiE2eIncludePatterns, argv) ??
     uiE2eIncludePatterns;
-  const serialInclude = (intersectIncludePatterns(uiE2eSerialTestFiles, include) ?? []).toSorted();
+  const serialInclude = (
+    intersectIncludePatterns(uiE2eSerialTestFiles, include, matchesVitestGlob) ?? []
+  ).toSorted();
   const chromiumSetup = "test/vitest/vitest.ui-e2e.global-setup.ts";
   // Vitest resolves dependency directories per project even though ProjectConfig
   // narrows that type. Keep the shared cached dependency roots intact.
@@ -204,7 +207,8 @@ export function createUiE2eVitestConfig(
           test: {
             ...projectTest,
             exclude,
-            include: intersectIncludePatterns(uiE2eStandaloneTestFiles, include) ?? [],
+            include:
+              intersectIncludePatterns(uiE2eStandaloneTestFiles, include, matchesVitestGlob) ?? [],
             name: "ui-e2e-standalone",
             sequence: { ...baseSequence, groupOrder: 0 },
           },

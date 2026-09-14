@@ -15,6 +15,8 @@ import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js
 import type { SqliteWorkerBackend } from "../infra/sqlite-worker-contract.js";
 import { getSqliteWorkerStateContext } from "../infra/sqlite-worker-state-context.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { isPluginStateWorkerCommand } from "../plugin-state/plugin-state-worker-contract.js";
+import { executePluginStateCommand } from "../plugin-state/plugin-state.worker.js";
 import { readPluginMetadataStateRowSync } from "../plugins/installed-plugin-index-row.js";
 import {
   ensureProjectRegistrySchema,
@@ -263,6 +265,17 @@ function createSharedStateWorkerBackend(
             ...(observed ? { current: observed } : {}),
           };
         }
+      }
+      if (isPluginStateWorkerCommand(command)) {
+        return executePluginStateCommand(
+          command,
+          {
+            path: context.databasePath,
+            env: getSqliteWorkerStateContext().environment,
+          },
+          open,
+          nativeDatabase?.db.isOpen === true,
+        );
       }
       if (command.type === "config.health.read") {
         const read = command.input.artifactPreserving
