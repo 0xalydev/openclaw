@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { formatSkillsCheck } from "../../cli/skills-cli.format.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGatewayHandler } from "../../gateway/server-methods/skills.test-helpers.js";
 import {
@@ -11,6 +12,7 @@ import {
 import { createMockPluginRegistry } from "../../plugins/hooks.test-fixtures.js";
 import { captureEnv } from "../../test-utils/env.js";
 import { createFixtureSuite } from "../../test-utils/fixture-suite.js";
+import { withMockedPlatform } from "../../test-utils/vitest-spies.js";
 import { buildWorkspaceSkillStatus } from "../discovery/status.js";
 import { loadWorkspaceSkills } from "../loading/workspace-skill-loader.js";
 import { runCommandWithTimeoutMock } from "../test-support/install-test-mocks.js";
@@ -35,6 +37,7 @@ async function writeInstallableSkill(
     kind: "node",
     package: "example-package",
   },
+  requiredBins?: string[],
 ): Promise<string> {
   const skillDir = path.join(workspaceDir, "skills", name);
   await fs.mkdir(skillDir, { recursive: true });
@@ -43,7 +46,7 @@ async function writeInstallableSkill(
     `---
 name: ${name}
 description: test skill
-metadata: ${JSON.stringify({ openclaw: { install: Array.isArray(installSpec) ? installSpec : [installSpec] } })}
+metadata: ${JSON.stringify({ openclaw: { install: Array.isArray(installSpec) ? installSpec : [installSpec], ...(requiredBins ? { requires: { bins: requiredBins } } : {}) } })}
 ---
 
 # ${name}
@@ -142,6 +145,121 @@ describe("installSkill before_install hooks", () => {
       expect(options.env).not.toHaveProperty("PATH");
       const stat = await fs.stat(npmPrefix);
       expect(stat.isDirectory()).toBe(true);
+    });
+  });
+
+  it.each([
+    {
+      platform: "darwin" as const,
+      guidance: "Homebrew is not installed. Install it from https://brew.sh",
+    },
+    {
+      platform: "linux" as const,
+      guidance:
+        'Homebrew is not installed. Install it from https://brew.sh or install "vendor/tap/tool" manually using your system package manager (e.g. apt, dnf, pacman).',
+    },
+  ])("preserves supported-platform missing-brew guidance on $platform", async (testCase) => {
+    await withWorkspaceCase(async ({ workspaceDir }) => {
+      await writeInstallableSkill(workspaceDir, "brew-tool", {
+        id: "brew",
+        kind: "brew",
+        formula: "vendor/tap/tool",
+      });
+      skillsInstallTesting.setDepsForTest({
+        loadWorkspaceSkills: loadTestWorkspaceSkillEntries,
+        hasBinary: () => false,
+        resolveBrewExecutable: () => undefined,
+        isContainerEnvironment: () => false,
+      });
+      const result = await withMockedPlatform(testCase.platform, () =>
+        installSkill({ workspaceDir, skillName: "brew-tool", installId: "brew" }),
+      );
+
+      expect(result).toMatchObject({
+        ok: false,
+        message: `brew not installed — ${testCase.guidance}`,
+        code: null,
+      });
+      expect(runCommandWithTimeoutMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("reports FreeBSD manual recovery over RPC and detects the installed binary on skills check", async () => {
+    const { skillsHandlers } = await import("../../gateway/server-methods/skills.js");
+    await withWorkspaceCase(async ({ workspaceDir }) => {
+      const skillName = "brew-manual-recovery";
+      const binary = "skill-manual-recovery-tool";
+      await writeInstallableSkill(
+        workspaceDir,
+        skillName,
+        { id: "brew", kind: "brew", formula: "vendor/tap/tool" },
+        [binary],
+      );
+      const binDir = path.join(workspaceDir, "bin");
+      await fs.mkdir(binDir);
+      const config: OpenClawConfig = {
+        agents: { ownership: "explicit", list: [{ id: "ops", workspace: workspaceDir }] },
+      };
+      skillsInstallTesting.setDepsForTest({
+        loadWorkspaceSkills: loadTestWorkspaceSkillEntries,
+        hasBinary: () => false,
+        resolveBrewExecutable: () => undefined,
+      });
+      const envSnapshot = captureEnv(["PATH"]);
+      try {
+        process.env.PATH = binDir;
+        await withMockedPlatform("freebsd", async () => {
+          const result = await callGatewayHandler(
+            skillsHandlers,
+            "skills.install",
+            { agentId: "ops", name: skillName, installId: "brew" },
+            { context: { getRuntimeConfig: () => config } },
+          );
+          expect(result.ok).toBe(false);
+          expect(result.error).toMatchObject({
+            code: "UNAVAILABLE",
+            message: expect.stringContaining("Homebrew is not supported on FreeBSD"),
+          });
+          expect(result.response).toMatchObject({
+            ok: false,
+            message: expect.stringContaining("pkg or Ports"),
+            code: null,
+          });
+          const message = (result.error as { message: string }).message;
+          expect(message).toContain("Gateway host");
+          expect(message).toContain("openclaw skills check");
+          expect(message).toContain("--agent <id>");
+          expect(message).not.toContain("brew.sh");
+          expect(message).not.toContain("vendor/tap/tool");
+
+          const check = () =>
+            JSON.parse(
+              formatSkillsCheck(
+                buildWorkspaceSkillStatus(workspaceDir, {
+                  config,
+                  agentId: "ops",
+                  entries: loadTestWorkspaceSkillEntries(workspaceDir),
+                }),
+                { json: true },
+              ),
+            );
+          expect(check().missingRequirements).toEqual([
+            expect.objectContaining({
+              name: skillName,
+              missing: expect.objectContaining({ bins: [binary] }),
+            }),
+          ]);
+          await fs.writeFile(path.join(binDir, binary), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+          expect(check()).toMatchObject({
+            agentId: "ops",
+            eligible: [skillName],
+            missingRequirements: [],
+          });
+          expect(runCommandWithTimeoutMock).not.toHaveBeenCalled();
+        });
+      } finally {
+        envSnapshot.restore();
+      }
     });
   });
 
