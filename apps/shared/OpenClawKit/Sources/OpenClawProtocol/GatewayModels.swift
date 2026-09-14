@@ -8598,6 +8598,50 @@ public struct ModelsAuthRefreshParams: Codable, Sendable {
     }
 }
 
+public struct ModelsAuthSetApiKeyParams: Codable, Sendable {
+    public let provider: String
+    public let apikey: String
+    public let agentid: String?
+
+    public init(
+        provider: String,
+        apikey: String,
+        agentid: String? = nil)
+    {
+        self.provider = provider
+        self.apikey = apikey
+        self.agentid = agentid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case apikey = "apiKey"
+        case agentid = "agentId"
+    }
+}
+
+public struct ModelsAuthSetApiKeyResult: Codable, Sendable {
+    public let provider: String
+    public let profileid: String
+    public let warning: String?
+
+    public init(
+        provider: String,
+        profileid: String,
+        warning: String? = nil)
+    {
+        self.provider = provider
+        self.profileid = profileid
+        self.warning = warning
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case profileid = "profileId"
+        case warning
+    }
+}
+
 public struct ModelsAuthStatusParams: Codable, Sendable {
     public let refresh: Bool?
     public let agentid: String?
