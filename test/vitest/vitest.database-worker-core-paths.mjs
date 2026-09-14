@@ -58,6 +58,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/plugin-sdk/provider-auth.test.ts",
   "src/plugin-sdk/provider-auth-copilot-cache.test.ts",
   "src/plugins/doctor-contract-registry.load-paths.test.ts",
+  "src/state/openclaw-state-maintenance-resources.test.ts",
   "src/tasks/task-registry.test.ts",
   "test/plugins/beam-http-identity.test.ts",
   "src/plugin-sdk/runtime-doctor-migrations.test.ts",
