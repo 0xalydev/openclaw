@@ -289,6 +289,7 @@ function readUiCss(): string {
     "ui/src/styles/chat/tool-cards.css",
     "ui/src/styles/chat/working-indicator.css",
     "ui/src/styles/chat/question-card.css",
+    "ui/src/styles/rail-header.css",
     "ui/src/styles/chat/sidebar.css",
     "ui/src/styles/chat/side-panel.css",
   ];

@@ -19,6 +19,10 @@ import {
   loadCommandLaneDiagnostics,
   type CommandLaneDiagnostics,
 } from "../../lib/gateway-diagnostics.ts";
+import {
+  DEBUG_OVERLAY_SECTION_HEADERS,
+  type DebugOverlaySectionId,
+} from "./debug-overlay-loading.ts";
 import { renderCommandLaneRows } from "./lane-table.ts";
 
 type DebugOverlaySectionContext = {
@@ -27,7 +31,7 @@ type DebugOverlaySectionContext = {
 };
 
 type TypedDebugOverlaySectionDescriptor<T> = {
-  id: string;
+  id: DebugOverlaySectionId;
   titleKey: string;
   load: (context: DebugOverlaySectionContext, signal: AbortSignal) => Promise<T>;
   render: (value: T, statusHistory: readonly DebugOverlayStatusSample[]) => TemplateResult;
@@ -162,21 +166,18 @@ function renderEvents(gateway: ApplicationGateway): TemplateResult {
 
 export const DEBUG_OVERLAY_SECTIONS: readonly DebugOverlaySectionDescriptor[] = [
   defineDebugOverlaySection({
-    id: "lanes",
-    titleKey: "debug.overlay.lanes",
+    ...DEBUG_OVERLAY_SECTION_HEADERS.lanes,
     load: (context, signal) => loadCommandLaneDiagnostics(context.client, signal),
     render: renderLanes,
   }),
   defineDebugOverlaySection({
-    id: "status",
-    titleKey: "debug.overlay.status",
+    ...DEBUG_OVERLAY_SECTION_HEADERS.status,
     load: (context, signal) =>
       context.client.request<SystemInfoResult>("system.info", {}, { signal }),
     render: renderStatus,
   }),
   defineDebugOverlaySection({
-    id: "active-runs",
-    titleKey: "debug.overlay.activeRuns",
+    ...DEBUG_OVERLAY_SECTION_HEADERS["active-runs"],
     load: (context, signal) =>
       context.client.request<SessionsListResult>(
         "sessions.list",
@@ -186,8 +187,7 @@ export const DEBUG_OVERLAY_SECTIONS: readonly DebugOverlaySectionDescriptor[] = 
     render: renderActiveRuns,
   }),
   defineDebugOverlaySection({
-    id: "events",
-    titleKey: "debug.overlay.events",
+    ...DEBUG_OVERLAY_SECTION_HEADERS.events,
     load: async (context) => context.gateway,
     render: renderEvents,
   }),

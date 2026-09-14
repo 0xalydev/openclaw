@@ -9,7 +9,22 @@ export const en: TranslationMap & {
   configPage: TranslationMap;
   connection: TranslationMap;
   configView: TranslationMap;
-  debug: TranslationMap & { overlay: TranslationMap };
+  debug: TranslationMap & {
+    lanes: TranslationMap & Record<"lane" | "active" | "queued" | "blocked", string>;
+    overlay: TranslationMap &
+      Record<
+        | "title"
+        | "eyebrow"
+        | "lanes"
+        | "status"
+        | "activeRuns"
+        | "events"
+        | "cpu"
+        | "memory"
+        | "delayP99",
+        string
+      >;
+  };
   // Lazy en-devices.ts assigns into this namespace.
   devices: TranslationMap;
   desktop: TranslationMap &
@@ -1625,8 +1640,22 @@ export const en: TranslationMap & {
     },
   },
   debug: {
+    lanes: {
+      lane: "Lane",
+      active: "Active",
+      queued: "Queued",
+      blocked: "Blocked",
+    },
     overlay: {
       title: "System busyness",
+      eyebrow: "Live diagnostics",
+      lanes: "Lanes",
+      status: "Event loop / status",
+      activeRuns: "Active runs",
+      events: "Events",
+      cpu: "CPU",
+      memory: "Memory",
+      delayP99: "Delay p99",
     },
   },
   configForm: {
