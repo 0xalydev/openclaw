@@ -3204,6 +3204,9 @@ docker_e2e_docker_run_cmd run demo
       '-v "$ONBOARD_ASSERTIONS:/app/scripts/e2e/lib/release-scenarios/assertions.mjs:ro"',
     );
     expect(runner).toContain(
+      '-v "$ONBOARD_ASSERTION_FILES:/app/scripts/e2e/lib/release-assertion-files.mjs:ro"',
+    );
+    expect(runner).toContain(
       '-v "$ONBOARD_MOCK_OPENAI_CONFIG:/app/scripts/e2e/lib/fixtures/mock-openai-config.mjs:ro"',
     );
   });
