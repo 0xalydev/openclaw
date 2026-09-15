@@ -282,6 +282,8 @@
     {
       "provider": "github-copilot",
       "method": "device",
+      "credentialOnly": true,
+      "channelLogin": {},
       "choiceId": "github-copilot",
       "appGuidedAuth": "device-code",
       "credentialOnly": true,
@@ -301,6 +303,7 @@
     {
       "provider": "github-copilot",
       "method": "device-enterprise",
+      "credentialOnly": true,
       "choiceId": "github-copilot-enterprise",
       "appGuidedAuth": "device-code",
       "credentialOnly": true,
