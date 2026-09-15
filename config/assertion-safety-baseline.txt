@@ -2966,7 +2966,7 @@ src/infra/private-mode.ts	2
 src/infra/provider-usage.auth.ts	2
 src/infra/provider-usage.fetch.codex.ts	1
 src/infra/provider-usage.fetch.deepseek.ts	1
-src/infra/provider-usage.fetch.minimax.ts	2
+src/infra/provider-usage.fetch.minimax.ts	1
 src/infra/push-apns-http2.ts	1
 src/infra/push-apns.relay.ts	1
 src/infra/push-apns.ts	3
