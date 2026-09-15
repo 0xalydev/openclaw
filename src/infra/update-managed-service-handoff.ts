@@ -6,7 +6,6 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import fs from "node:fs/promises";
-import { Socket } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { formatCliCommand } from "../cli/command-format.js";
@@ -74,6 +73,12 @@ type HandoffChild = ChildProcess & {
   stdin: NonNullable<ChildProcess["stdin"]>;
   stdout: NonNullable<ChildProcess["stdout"]>;
 };
+
+function unrefHandoffPipe(pipe: HandoffChild["stdin"] | HandoffChild["stdout"]): void {
+  if ("unref" in pipe && typeof pipe.unref === "function") {
+    pipe.unref();
+  }
+}
 // The private admission pipe must not change the installed CLI's stdin lifetime.
 const HANDOFF_COMMAND_RUNNER_SCRIPT = String.raw`
 const gateFs = process.getBuiltinModule("fs");
@@ -2753,12 +2758,7 @@ export async function transferManagedServiceUpdateHandoff(
     resolveUpdateInstallRoot(identity.installRoot),
   );
   const child = active?.launcher;
-  if (
-    !active ||
-    !(child?.stdin instanceof Socket) ||
-    !(child.stdout instanceof Socket) ||
-    !claimManagedServiceUpdateHandoff(identity)
-  ) {
+  if (!active || !child?.stdin || !child.stdout || !claimManagedServiceUpdateHandoff(identity)) {
     return false;
   }
   active.transferred = true;
@@ -2770,8 +2770,8 @@ export async function transferManagedServiceUpdateHandoff(
   // child. Only acknowledged transfer releases the child and its control pipes;
   // readiness still owns cancellation through native exit.
   child.unref();
-  child.stdin.unref();
-  child.stdout.unref();
+  unrefHandoffPipe(child.stdin);
+  unrefHandoffPipe(child.stdout);
   return true;
 }
 
