@@ -2533,7 +2533,6 @@ src/config/sessions/session-store-config.ts	2
 src/config/sessions/session-suggestion-store.ts	2
 src/config/sessions/session-transcript-projection-rebuild.ts	6
 src/config/sessions/session-transcript-reconcile.worker.ts	1
-src/config/sessions/session-transcript-search.ts	1
 src/config/sessions/skill-prompt-blobs.ts	5
 src/config/sessions/store-entry-shape.ts	2
 src/config/sessions/transcript-assistant-message.ts	2
