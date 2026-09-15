@@ -3200,7 +3200,7 @@ src/plugin-sdk/tool-payload.ts	2
 src/plugin-sdk/tool-plugin.ts	10
 src/plugin-sdk/windows-spawn.ts	1
 src/plugin-state/plugin-state-store.sqlite.ts	2
-src/plugin-state/plugin-state-store.ts	8
+src/plugin-state/plugin-state-store.ts	6
 src/plugin-state/plugin-store-validation.ts	1
 src/plugin-state/runtime-health-store.ts	1
 src/plugins/agent-tool-result-middleware.ts	1
