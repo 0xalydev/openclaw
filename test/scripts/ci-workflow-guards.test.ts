@@ -5209,7 +5209,37 @@ require("node:fs").writeFileSync("scheduler-baseline", process.env.OPENCLAW_UPGR
     expect(nativeResourcesSetup.if).toBe(
       "needs.preflight.outputs.use_compatible_android_ci != 'true'",
     );
-    expect(nativeResourcesSetup.with).toMatchObject({ "install-bun": "false" });
+    expect(nativeResourcesSetup.with).toMatchObject({
+      "install-bun": "false",
+      "install-deps": "false",
+    });
+    const nativeResourcesInstall = expectDefined(
+      androidJob.steps.find(
+        (step: WorkflowStep) => step.name === "Install Mermaid renderer dependencies",
+      ),
+      "Android native resources dependency install",
+    );
+    expect(nativeResourcesInstall.if).toBe(nativeResourcesSetup.if);
+    expect(nativeResourcesInstall.env).toEqual({ CI: "true" });
+    expect(nativeResourcesInstall.run.trim().split(/\s+/u)).toEqual([
+      "pnpm",
+      "install",
+      "--frozen-lockfile",
+      "--prefer-offline",
+      "--optional",
+      "--filter",
+      "'@openclaw/mermaid-renderer...'",
+      "--config.ignore-scripts=false",
+      "--config.engine-strict=false",
+      "--config.enable-pre-post-scripts=true",
+      "--config.side-effects-cache=true",
+    ]);
+    expect(androidJob.steps.indexOf(nativeResourcesSetup)).toBeLessThan(
+      androidJob.steps.indexOf(nativeResourcesInstall),
+    );
+    expect(androidJob.steps.indexOf(nativeResourcesInstall)).toBeLessThan(
+      androidJob.steps.indexOf(runStep),
+    );
   });
 
   describe("Android validation tiers", () => {
