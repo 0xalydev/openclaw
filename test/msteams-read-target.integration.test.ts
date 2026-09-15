@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { msteamsPlugin } from "../extensions/msteams/api.js";
 import { createOperationalRunInstanceRef } from "../src/agents/admitted-run-context.js";
@@ -6,6 +7,10 @@ import { wrapToolWithGatewayCallerIdentity } from "../src/agents/tools/gateway-c
 import { createMessageTool } from "../src/agents/tools/message-tool-execution.js";
 import { dispatchChannelMessageAction } from "../src/channels/plugins/message-action-dispatch.js";
 import type { ChannelThreadingToolContext } from "../src/channels/plugins/types.public.js";
+import { createDefaultDeps } from "../src/cli/deps.js";
+import { createMessageCliHelpers } from "../src/cli/program/message/helpers.js";
+import { registerMessageDiscordAdminCommands } from "../src/cli/program/message/register.discord-admin.js";
+import { messageCommand } from "../src/commands/message.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types.js";
 import { createAgentRuntimeApprovalAuthorityValidator } from "../src/gateway/agent-runtime-identity-token.js";
@@ -386,6 +391,47 @@ function expectGraphRequests(requests: GraphRequest[], action: Action, destinati
     paths.map((path) => ({ method: "GET", path, authorization: `Bearer ${token}` })),
   );
 }
+
+describe("Teams member info CLI", () => {
+  it("reads a selected channel member without current conversation context", async () => {
+    const fixture = await createFixture("none");
+    const runtime = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
+    const command = new Command().name("message").exitOverride();
+    registerMessageDiscordAdminCommands(command, {
+      ...createMessageCliHelpers("msteams"),
+      runMessageAction: async (action, opts) => {
+        await messageCommand({ ...opts, action }, createDefaultDeps(), runtime);
+      },
+    });
+
+    await command.parseAsync(
+      [
+        "member",
+        "info",
+        "--channel",
+        "msteams",
+        "--user-id",
+        memberId,
+        "--channel-id",
+        otherTarget,
+        "--json",
+      ],
+      { from: "user" },
+    );
+
+    expect(runtime.log).toHaveBeenCalledTimes(1);
+    expect(runtime.error).not.toHaveBeenCalled();
+    const result = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
+    expect(result).toMatchObject({
+      action: "member-info",
+      channel: "msteams",
+      dryRun: false,
+      handledBy: "plugin",
+    });
+    expectReadResult(result.payload, "member-info", other);
+    expectGraphRequests(fixture.requests, "member-info", other);
+  });
+});
 
 describe.each(["tool", "gateway"] as const)("Teams %s read target selection", (route) => {
   describe.each(["search", "member-info"] as const)("%s", (action) => {
