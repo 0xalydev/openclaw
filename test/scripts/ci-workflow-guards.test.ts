@@ -11264,12 +11264,23 @@ if (args[0] === 'delete-keychain') fs.unlinkSync(args.at(-1));
         "build --package-path apps/macos --build-system native --enable-code-coverage --build-tests",
         ...(buildExitCode === 0
           ? [
-              "test --package-path apps/macos --build-system native --enable-code-coverage --skip-build --experimental-maximum-parallelization-width 4 --skip AppStateIsolationTests",
+              expect.stringMatching(
+                /^test --package-path apps\/macos --build-system native --enable-code-coverage --skip-build --experimental-maximum-parallelization-width 4 --skip AppStateIsolationTests\|ProfileChatPreferencesTests --event-stream-output-path \S+\/swift-testing-events\.jsonl --event-stream-version 6\.3$/,
+              ),
             ]
           : []),
       ]);
       const output = existsSync(outputPath) ? readFileSync(outputPath, "utf8").trim() : "";
-      expect(output).toBe(buildExitCode === 0 ? "debug-tests-built=true" : "");
+      const outputLines = output.split("\n");
+      if (buildExitCode === 0) {
+        expect(outputLines).toHaveLength(2);
+        expect(outputLines[0]).toBe("debug-tests-built=true");
+        expect(
+          outputLines[1]?.startsWith(`menu-default-artifact-path=${root}/openclaw-menu-default-`),
+        ).toBe(true);
+      } else {
+        expect(output).toBe("");
+      }
     }
   });
 
