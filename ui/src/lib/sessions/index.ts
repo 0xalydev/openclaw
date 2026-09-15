@@ -150,7 +150,7 @@ export function createSessionCapability(
     // Preserve receipts before a pending intent makes another tracked copy.
     roster.inherit(annotated, projected);
     const decorated = deletions.apply(
-      mutations.applyConfirmedArchives(mutations.applyPendingRows(annotated, owner.scope.agentId)),
+      mutations.applyPendingRows(mutations.applyConfirmedArchives(annotated), owner.scope.agentId),
       owner,
     );
     roster.inherit(decorated, result);
@@ -197,11 +197,7 @@ export function createSessionCapability(
     decorate: decorateRows,
     reconcileList: (result, revision, agentId) => {
       const admitted = deletions.reconcileList(result, revision, agentId);
-      const sources =
-        admitted?.sessions.map((row) => ({
-          row,
-          select: roster.observeReadRow(row, revision, agentId),
-        })) ?? [];
+      const sources = roster.observeReadRows(admitted?.sessions ?? [], revision, agentId);
       const projected = permissions.reconcileList(admitted, revision, agentId);
       roster.inherit(projected, admitted);
       if (!projected) {
@@ -259,6 +255,8 @@ export function createSessionCapability(
     refreshReplacement: roster.refreshReplacement,
     refreshReplacementResult: roster.refreshReplacementResult,
     publishedRow: (key) => roster.publishedRow((row) => row.key === key),
+    archiveFields: roster,
+    readRevision: () => roster.requestRevision,
     redecorateLists: () => roster.redecorateLists(),
     notifyCreated,
     clearThink: thinkingClaims.clear,
@@ -612,6 +610,7 @@ export function createSessionCapability(
     create: mutations.create,
     recover: operations.recover,
     patch: mutations.patch,
+    patchMany: mutations.patchMany,
     archiveVisibility: mutations.archiveVisibility,
     beginArchive: mutations.beginArchive,
     assignOwner: mutations.assignOwner,
