@@ -3078,7 +3078,8 @@ describe("scripts/test-projects changed-target routing", () => {
     "src/cli/program/subcli-descriptors.test.ts",
     "src/cli/state-dir-gateway-check.process.test.ts",
     "src/cli/state-dir-gateway-check.server.test.ts",
-  ])("routes CLI process test %s through its isolated project", (file) => {
+    "src/state/openclaw-database-verify.process.test.ts",
+  ])("routes source-child process test %s through its isolated project", (file) => {
     expectSingleVitestRunPlan(buildVitestRunPlans([file]), {
       config: "test/vitest/vitest.cli-process.config.ts",
       includePatterns: [file],
@@ -3100,6 +3101,47 @@ describe("scripts/test-projects changed-target routing", () => {
     );
     expect(processPlan?.includePatterns).toContain("src/cli/help-exit.process.test.ts");
     expect(processPlan?.includePatterns).toContain("src/cli/update-dry-run-state.process.test.ts");
+  });
+
+  it.each(["src/state", "src/state/", "src/state/**/*.test.ts"])(
+    "adds the verifier process project for broad state target %s",
+    (target) => {
+      const plans = buildVitestRunPlans([target]);
+      expect(plans.map((plan) => plan.config)).toContain("test/vitest/vitest.unit.config.ts");
+      expect(
+        plans.filter((plan) => plan.config === "test/vitest/vitest.cli-process.config.ts"),
+      ).toEqual([
+        {
+          config: "test/vitest/vitest.cli-process.config.ts",
+          forwardedArgs: [],
+          includePatterns: ["src/state/openclaw-database-verify.process.test.ts"],
+          watchMode: false,
+        },
+      ]);
+    },
+  );
+
+  it("deduplicates the verifier process selected by a state directory and exact leaf", () => {
+    const plans = buildVitestRunPlans([
+      "src/state",
+      "src/state/openclaw-database-verify.process.test.ts",
+    ]);
+    expect(
+      plans.filter((plan) => plan.config === "test/vitest/vitest.cli-process.config.ts"),
+    ).toEqual([
+      {
+        config: "test/vitest/vitest.cli-process.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/state/openclaw-database-verify.process.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("does not fan out the verifier for an unrelated exact state test", () => {
+    expect(
+      buildVitestRunPlans(["src/state/openclaw-database.test.ts"]).map((plan) => plan.config),
+    ).not.toContain("test/vitest/vitest.cli-process.config.ts");
   });
 
   it("rejects broad CLI watch targets that cross shared and process projects", () => {
