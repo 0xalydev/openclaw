@@ -9,6 +9,10 @@ import {
   createQaGatewayChild,
   startQaBusServer,
 } from "../../../../extensions/qa-lab/api.js";
+import {
+  FileSettingsStorage,
+  type Settings,
+} from "../../../../src/agents/sessions/settings-storage.js";
 import { writeOpenAiResponsesSse } from "../../../helpers/openai-responses-sse.js";
 import { stopQaGatewayFixture } from "../../../helpers/qa-gateway-cleanup.js";
 
@@ -21,6 +25,7 @@ const NOTE_FILE = "proof-note.txt";
 const JOB_NAME = "idle-timeout-finalization-proof";
 const ANNOUNCE_CONVERSATION = { id: "idle-timeout-proof-announce", kind: "direct" as const };
 const PROVIDER_IDLE_TIMEOUT_SECONDS = 8;
+const PROVIDER_MAX_RETRIES = 0;
 const RUN_TIMEOUT_SECONDS = 120;
 const RUN_WAIT_MS = 100_000;
 // Source-mode Gateway startup with packaged plugins can take a few minutes on slow hosts.
@@ -354,6 +359,25 @@ describe.runIf(process.env.OPENCLAW_CRON_IDLE_TIMEOUT_FINALIZATION_PROOF === "1"
           transport,
           transportBaseUrl: bus.baseUrl,
           controlUiEnabled: Boolean(SCREENSHOT_DIR),
+          onListening: ({ runtimeEnv }) => {
+            const stateDir = runtimeEnv.OPENCLAW_STATE_DIR;
+            if (!stateDir) {
+              throw new Error("QA gateway state directory is missing");
+            }
+            // Exercise unanswered finalization after the supported retry budget
+            // is exhausted, rather than stalling tools-enabled continuation too.
+            const agentDir = path.join(stateDir, "agents", "qa", "agent");
+            new FileSettingsStorage(process.cwd(), agentDir).withLock("global", (raw) => {
+              const settings: Settings = raw ? JSON.parse(raw) : {};
+              return JSON.stringify({
+                ...settings,
+                retry: {
+                  ...settings.retry,
+                  provider: { ...settings.retry?.provider, maxRetries: PROVIDER_MAX_RETRIES },
+                },
+              });
+            });
+          },
           mutateConfig: (config) => {
             const providerConfig = config.models?.providers?.["mock-openai"];
             if (!providerConfig) {
@@ -468,6 +492,7 @@ describe.runIf(process.env.OPENCLAW_CRON_IDLE_TIMEOUT_FINALIZATION_PROOF === "1"
               head:
                 process.env.OPENCLAW_PROOF_HEAD_SHA ?? process.env.GITHUB_SHA ?? "local-checkout",
               providerIdleTimeoutSeconds: PROVIDER_IDLE_TIMEOUT_SECONDS,
+              providerMaxRetries: PROVIDER_MAX_RETRIES,
               cronRunTrigger: triggered,
               providerRequests: provider.requests.map((request) => ({
                 seq: request.seq,
