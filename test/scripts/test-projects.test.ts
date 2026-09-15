@@ -2246,6 +2246,17 @@ describe("scripts/test-projects changed-target routing", () => {
     });
   });
 
+  it.each([
+    "src/gateway/health/collector.queue-health.test.ts",
+    "src/gateway/server-methods/server-methods.test.ts",
+  ])("routes health SQLite consumer %s exactly once to its broker owner", (testFile) => {
+    expectSingleVitestRunPlan(buildVitestRunPlans([testFile]), {
+      config: "test/vitest/vitest.gateway-database-workers.config.ts",
+      includePatterns: [testFile],
+    });
+    expect(gatewayDatabaseWorkerTestFiles.filter((file) => file === testFile)).toEqual([testFile]);
+  });
+
   it.each(gatewayDatabaseWorkerTestFiles)(
     "routes Gateway database consumer %s to its fork owner",
     (testFile) => {
@@ -2311,6 +2322,15 @@ describe("scripts/test-projects changed-target routing", () => {
       });
     },
   );
+
+  it("routes the schema-upgrade counter consumer exactly once to its broker owner", () => {
+    const testFile = "src/state/openclaw-state-db.test.ts";
+    expectSingleVitestRunPlan(buildVitestRunPlans([testFile]), {
+      config: "test/vitest/vitest.infra.config.ts",
+      includePatterns: [testFile],
+    });
+    expect(databaseWorkerCoreTestFiles.filter((file) => file === testFile)).toEqual([testFile]);
+  });
 
   it.each(databaseWorkerCoreTestFiles)(
     "routes host-owned database consumer %s to the infra fork shard",
