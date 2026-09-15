@@ -2141,6 +2141,10 @@ describe("gateway agent handler chat.abort integration", () => {
     },
   );
 
+  it("starts the next abort fixture without previously registered child runs", () => {
+    expect(getSubagentRunByChildSessionKey("agent:main:subagent:owned-by-other-turn")).toBeNull();
+  });
+
   it("chat.abort by runId allows the owner connection to use a stale session key", async () => {
     prime();
     const pending = new Promise(() => {});
