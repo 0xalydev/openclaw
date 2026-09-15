@@ -771,7 +771,6 @@ extensions/migrate-claude/source.ts	2
 extensions/migrate-hermes/apply.ts	1
 extensions/migrate-hermes/auth-config.ts	2
 extensions/migrate-hermes/auth.ts	1
-extensions/migrate-hermes/helpers.ts	1
 extensions/migrate-hermes/memory.ts	1
 extensions/migrate-hermes/model.ts	3
 extensions/minimax/model-definitions.ts	2
