@@ -9,6 +9,7 @@ import type { DeliveryQueueWorkerOperations } from "../infra/delivery-queue.work
 import type { SessionDeliveryWorkerOperations } from "../infra/session-delivery-queue.worker-contract.js";
 import type { PreparedSqliteAuditRecord } from "../infra/sqlite-audit-record.kernel.js";
 import type { SqliteFileGeneration } from "../infra/sqlite-file-generation.js";
+import type { readRemoteModelCatalog } from "../model-catalog/remote-store.js";
 import type { PluginStateWorkerOperations } from "../plugin-state/plugin-state-worker-contract.js";
 import type { PluginMetadataStateSelector } from "../plugins/installed-plugin-index-row.js";
 import type { TaskFlowView } from "../plugins/runtime/task-domain-types.js";
@@ -53,6 +54,10 @@ export type OpenClawStateWorkerOperations = PluginStateWorkerOperations &
   DeliveryQueueWorkerOperations & {
     "backup.recordOutcome": { input: PreparedBackupRunRecord; output: void };
     "projects.findRoot": { input: { repoRoot: string }; output: string | undefined };
+    "modelCatalog.remote.read": {
+      input: { artifactPreservingReadOnly: boolean };
+      output: ReturnType<typeof readRemoteModelCatalog>;
+    };
     "plugins.metadata.read": {
       input: { selector: PluginMetadataStateSelector; artifactPreservingReadOnly?: boolean };
       output: { value_json: string } | undefined;

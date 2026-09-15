@@ -16,6 +16,7 @@ import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js
 import type { SqliteWorkerBackend } from "../infra/sqlite-worker-contract.js";
 import { getSqliteWorkerStateContext } from "../infra/sqlite-worker-state-context.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { readRemoteModelCatalog } from "../model-catalog/remote-store.js";
 import { isPluginStateWorkerCommand } from "../plugin-state/plugin-state-worker-contract.js";
 import { executePluginStateCommand } from "../plugin-state/plugin-state.worker.js";
 import { readPluginMetadataStateRowSync } from "../plugins/installed-plugin-index-row.js";
@@ -140,6 +141,16 @@ function createSharedStateWorkerBackend(
             { path: context.databasePath, env: getSqliteWorkerStateContext().environment },
           );
         return command.input.preserveSourceArtifacts
+          ? withArtifactPreservingStateReads(read)
+          : read();
+      }
+      if (command.type === "modelCatalog.remote.read") {
+        const read = () =>
+          readRemoteModelCatalog({
+            path: context.databasePath,
+            env: getSqliteWorkerStateContext().environment,
+          });
+        return command.input.artifactPreservingReadOnly
           ? withArtifactPreservingStateReads(read)
           : read();
       }
