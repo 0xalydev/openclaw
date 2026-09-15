@@ -24,6 +24,7 @@ import type {
   TaskRegistryStoreSnapshot,
 } from "../tasks/task-registry.store.types.js";
 import type { TaskRecord, TaskRegistrySummary } from "../tasks/task-registry.types.js";
+import type { PreparedBackupRunRecord } from "./backup-run-records.kernel.js";
 import type { UserPreferenceWorkerOperations } from "./user-preferences.types.js";
 
 type TaskLookupRecords = {
@@ -48,6 +49,7 @@ export type OpenClawStateWorkerOperations = PluginStateWorkerOperations &
   UserPreferenceWorkerOperations &
   CronStoreWorkerOperations &
   SessionDeliveryWorkerOperations & {
+    "backup.recordOutcome": { input: PreparedBackupRunRecord; output: void };
     "projects.findRoot": { input: { repoRoot: string }; output: string | undefined };
     "plugins.metadata.read": {
       input: { selector: PluginMetadataStateSelector; artifactPreservingReadOnly?: boolean };
