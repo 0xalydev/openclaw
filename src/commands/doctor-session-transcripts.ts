@@ -278,7 +278,7 @@ async function noteSessionSqliteMigrationHealth(params: {
     // Canonical-key ties compare complete entry JSON, so select their winner before stripping it.
     resolvedSkillsReport = repairCanonicalSessionResolvedSkills(repairParams);
     // Import may create the first durable SQLite row for a colliding legacy key.
-    reservedKeyReport = repairReservedIncognitoSessionKeys(repairParams);
+    reservedKeyReport = await repairReservedIncognitoSessionKeys(repairParams);
     deliveryReport = repairCanonicalSessionDeliveryStates(repairParams);
     repairLegacySessionExecPolicy(repairParams);
     if (params.postSessionPluginMigrationPlanBound && !params.postSessionPluginMigration) {
@@ -306,6 +306,23 @@ async function noteSessionSqliteMigrationHealth(params: {
         config: params.cfg ?? {},
         env: params.env,
         maintenanceAuthority,
+        ...(maintenanceAuthority
+          ? {
+              beforeCompletion: async (
+                completedPluginIds: readonly string[],
+                assertCurrent: () => void,
+              ) => {
+                const { settleRetainedDoctorSessionSources } =
+                  await import("./doctor-session-sqlite.js");
+                await settleRetainedDoctorSessionSources(
+                  report,
+                  completedPluginIds,
+                  maintenanceAuthority,
+                  assertCurrent,
+                );
+              },
+            }
+          : {}),
         ...(params.postSessionPluginMigration
           ? { plannedActions: params.postSessionPluginMigration.plannedActions }
           : {}),

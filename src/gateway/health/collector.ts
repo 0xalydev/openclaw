@@ -4,7 +4,10 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { listAgentEntries } from "../../agents/agent-scope.js";
 import { redactChannelStatusSummaryBaseUrl } from "../../channels/account-snapshot-fields.js";
-import { buildChannelAccountSnapshotFromInspection } from "../../channels/account-summary.js";
+import {
+  buildChannelAccountSnapshotFromInspection,
+  buildChannelAccountSnapshotFromRuntime,
+} from "../../channels/account-summary.js";
 import { resolveChannelDefaultAccountId } from "../../channels/plugins/helpers.js";
 import { listReadOnlyChannelPluginsForConfig } from "../../channels/plugins/read-only.js";
 import { buildChannelAccountSnapshotFromAccount } from "../../channels/plugins/status.js";
@@ -42,7 +45,10 @@ import type { GatewayHotReloadStatus } from "../config-reload-status.types.js";
 import type { ChannelRuntimeSnapshot } from "../server-channel-runtime.types.js";
 import { buildNonSensitiveProbeFailure, resolveHealthAccountContext } from "./account-context.js";
 import { buildContextEngineHealthSummary } from "./context-engine.js";
-import { buildDeliveryQueueHealthSummary } from "./delivery-queue.js";
+import {
+  buildDeliveryQueueHealthSummary,
+  captureDeliveryQueueHealthContext,
+} from "./delivery-queue.js";
 import type {
   AgentHealthSummary,
   ChannelAccountHealthSummary,
@@ -240,6 +246,7 @@ type HealthChannelPlan = {
   defaultAccountId: string;
   preferredAccountId: string;
   accountIds: string[];
+  configuredAccountIds: ReadonlySet<string>;
   accountSummaries: Record<string, ChannelAccountHealthSummary>;
 };
 
@@ -273,13 +280,34 @@ async function buildHealthAccountRecord(params: {
   deadlineAtMs: number;
   timeoutMs: number;
   runtimeSnapshot?: ChannelRuntimeSnapshot;
+  runtimeOnly: boolean;
 }): Promise<ChannelAccountHealthSummary> {
   const timedOut = () => buildHealthTimeoutRecord(params.accountId, params.timeoutMs);
+  const runtimeAccount =
+    params.runtimeSnapshot?.channelAccounts[params.plugin.id]?.[params.accountId];
   const runtimeSnapshot =
-    params.runtimeSnapshot?.channelAccounts[params.plugin.id]?.[params.accountId] ??
+    runtimeAccount ??
     (params.accountId === params.defaultAccountId
       ? params.runtimeSnapshot?.channels[params.plugin.id]
       : undefined);
+  if (params.runtimeOnly && runtimeAccount) {
+    const snapshot = buildChannelAccountSnapshotFromRuntime(runtimeAccount);
+    const unavailable = resolveUnavailableChannelAccountSnapshot(params.cfg, {
+      channelId: params.plugin.id,
+      accountId: params.accountId,
+      runtime: snapshot,
+    });
+    if (unavailable) {
+      return unavailable;
+    }
+    const healthState = resolveChannelHealthState(snapshot, {
+      channelId: params.plugin.id,
+      now: Date.now(),
+      staleEventThresholdMs: DEFAULT_CHANNEL_STALE_EVENT_THRESHOLD_MS,
+      channelConnectGraceMs: DEFAULT_CHANNEL_CONNECT_GRACE_MS,
+    });
+    return { ...snapshot, ...(healthState !== undefined ? { healthState } : {}) };
+  }
   const unavailable = resolveUnavailableChannelAccountSnapshot(params.cfg, {
     channelId: params.plugin.id,
     accountId: params.accountId,
@@ -453,6 +481,7 @@ export async function collectGatewayHealthSnapshot(params: {
   eventLoop?: HealthSummary["eventLoop"];
   configReloadHotReloadStatus?: GatewayHotReloadStatus;
 }): Promise<HealthSummary> {
+  const stateContext = captureDeliveryQueueHealthContext();
   const start = Date.now();
   const timeoutMs = Math.min(
     resolveTimerTimeoutMs(params.timeoutMs, HEALTH_COLLECTION_TIMEOUT_MS, 50),
@@ -518,9 +547,13 @@ export async function collectGatewayHealthSnapshot(params: {
     );
     const accountIdsToProbe = Array.from(
       new Set(
-        [preferredAccountId, defaultAccountId, ...accountIds, ...boundAccountIdsAll].filter(
-          (value) => value && value.trim(),
-        ),
+        [
+          preferredAccountId,
+          defaultAccountId,
+          ...accountIds,
+          ...boundAccountIdsAll,
+          ...Object.keys(params.runtimeSnapshot?.channelAccounts[plugin.id] ?? {}),
+        ].filter((value) => value && value.trim()),
       ),
     );
     // Probe preferred/default/bound accounts first, but include all configured
@@ -538,6 +571,7 @@ export async function collectGatewayHealthSnapshot(params: {
       defaultAccountId,
       preferredAccountId,
       accountIds: accountIdsToProbe,
+      configuredAccountIds: new Set(accountIds),
       accountSummaries: {},
     };
   });
@@ -558,6 +592,7 @@ export async function collectGatewayHealthSnapshot(params: {
         deadlineAtMs,
         timeoutMs,
         runtimeSnapshot: params.runtimeSnapshot,
+        runtimeOnly: !plan.configuredAccountIds.has(accountId),
       }),
     })),
     limit: params.probe ? HEALTH_PROBE_CONCURRENCY : 1,
@@ -592,7 +627,7 @@ export async function collectGatewayHealthSnapshot(params: {
 
   const pluginHealth = buildPluginHealthSummary(cfg);
   const contextEngineHealth = buildContextEngineHealthSummary();
-  const deliveryQueueHealth = buildDeliveryQueueHealthSummary();
+  const deliveryQueueHealth = await buildDeliveryQueueHealthSummary(undefined, stateContext);
   return {
     ok: true,
     ts: Date.now(),

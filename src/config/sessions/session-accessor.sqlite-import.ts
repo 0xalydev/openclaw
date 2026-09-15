@@ -2,11 +2,13 @@ import {
   executeSqliteQueryTakeFirstSync,
   iterateSqliteQuerySync,
 } from "../../infra/kysely-sync.js";
+import type { LegacyAcpMigrationSource } from "../../infra/legacy-acp-migration-source.js";
 import {
   runOpenClawAgentWriteTransaction,
   resolveOpenClawAgentSqlitePath,
   type OpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
+import { recordLegacyAcpMigrationSources } from "./session-accessor.sqlite-acp-provenance.js";
 import { readExactSessionEntryRowForCanonicalRepair } from "./session-accessor.sqlite-canonical-repair.js";
 import type { SessionAccessScope, TranscriptEvent } from "./session-accessor.sqlite-contract.js";
 import { publishSessionEntryCacheInvalidation } from "./session-accessor.sqlite-entry-cache.js";
@@ -33,6 +35,7 @@ import {
   appendTranscriptEventsInTransaction,
   createTranscriptEventInserter,
 } from "./session-accessor.sqlite-transcript-store.js";
+import { assertSessionTranscriptHot } from "./session-cold-storage-state.js";
 import { reconcileSessionTranscriptIndexInTransaction } from "./session-transcript-index.js";
 import type { SessionEntry } from "./types.js";
 
@@ -44,12 +47,15 @@ type SqliteSessionImportRowsParams = Pick<
   beforePersistentApply?: () => void;
   allowMalformedRowRepair?: boolean;
   repairLegacyTranscript?: boolean;
+  /** Doctor-discovered history cannot replace the current logical session or window owner. */
+  historicalOnly?: boolean;
   preserveExactStoredKey?: boolean;
   readExactTranscriptRows?: (
     append: (row: { createdAt: number; eventJson: string }) => void,
   ) => void;
   skipIfExists?: boolean;
   entry: SessionEntry;
+  legacyAcpMigrationSource?: LegacyAcpMigrationSource;
   readTranscriptEvents?: (append: (event: TranscriptEvent) => void) => void | (() => void);
   transcriptMtimeMs?: number;
 };
@@ -97,6 +103,7 @@ function importSqliteSessionRowsInTransaction(
       transcriptEvents,
     };
   }
+  assertSessionTranscriptHot(database.db, params.entry.sessionId);
   const preservedHarnessId =
     params.entry.agentHarnessId === undefined &&
     currentEntry?.sessionId === params.entry.sessionId &&
@@ -113,11 +120,43 @@ function importSqliteSessionRowsInTransaction(
       sessionId: params.entry.sessionId,
     }),
   };
-  // Doctor imports legacy aliases verbatim; canonical-key repair owns their normalization.
-  writeSessionEntry(database, resolved.sessionKey, importedEntry, {
-    allowStoredAliases: true,
-    previousEntry: currentEntry ?? null,
-  });
+  let preserveHistoricalNode = false;
+  if (params.historicalOnly) {
+    const db = getSessionKysely(database.db);
+    const owner = executeSqliteQueryTakeFirstSync(
+      database.db,
+      db
+        .selectFrom("session_windows")
+        .select("session_key")
+        .where("session_id", "=", params.entry.sessionId),
+    )?.session_key;
+    if (owner && owner !== resolved.sessionKey) {
+      throw new Error(
+        `Historical transcript ${params.entry.sessionId} already belongs to ${owner}`,
+      );
+    }
+    preserveHistoricalNode = Boolean(
+      executeSqliteQueryTakeFirstSync(
+        database.db,
+        db
+          .selectFrom("session_nodes")
+          .select("session_key")
+          .where("session_key", "=", resolved.sessionKey),
+      ),
+    );
+  }
+  // Historical generations append under their existing node without changing its current pointer.
+  if (!preserveHistoricalNode) {
+    writeSessionEntry(database, resolved.sessionKey, importedEntry, {
+      allowStoredAliases: true,
+      previousEntry: currentEntry ?? null,
+    });
+    if (params.legacyAcpMigrationSource) {
+      recordLegacyAcpMigrationSources(database.db, resolved.sessionKey, [
+        params.legacyAcpMigrationSource,
+      ]);
+    }
+  }
   // Only trusted SQLite handoffs can transfer ownership and hash exact ordered rows;
   // parsing, deduping, or trusting JSON ownership would break the migration boundary.
   if (params.readExactTranscriptRows) {

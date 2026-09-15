@@ -203,6 +203,8 @@ export type ActivateSetupInferenceParams = {
   /** False when an enclosing persistent-operation boundary owns the setup audit. */
   recordSetupAudit?: boolean;
   runtime: RuntimeEnv;
+  /** Explicit consent from the CLI command that tests and activates a saved sign-in. */
+  activationConfirmed?: true;
   /** Interactive provider login transport, required for `provider-auth`. */
   prompter?: WizardPrompter;
   /** Cancels provider-owned browser callbacks and device-code polling. */
@@ -215,12 +217,8 @@ export type ActivateSetupInferenceParams = {
   onPreparationComplete?: () => void;
   /** Observe the authored config held by the inference writer before it commits. */
   onCommitStarted?: (sourceConfig: OpenClawConfig) => void;
-  /** Gateway callers await application only after releasing the setup queue and lane. */
-  onRuntimeApplication?: (
-    application: ReturnType<
-      typeof import("../config/runtime-write-application.js").createRuntimeConfigWriteApplication
-    >,
-  ) => void;
+  /** Finish application or recovery only after releasing the Gateway setup queue. */
+  onActivationCompletion?: (complete: () => Promise<boolean>) => void;
   deps?: ActivateSetupInferenceDeps;
 };
 
@@ -280,7 +278,6 @@ export type ActivateSetupInferenceDeps = {
   resolveManifestProviderAuthChoices?: typeof resolveManifestProviderAuthChoices;
   enablePluginInConfig?: typeof enablePluginInConfig;
   loadAuthProfileStoreForRuntime?: typeof loadAuthProfileStoreForRuntime;
-  ensureAuthProfileStore?: typeof import("../agents/auth-profiles/store-runtime.js").ensureAuthProfileStore;
   resolveCliAuthBindingFingerprint?: typeof import("../agents/cli-auth-epoch.js").resolveCliAuthBindingFingerprint;
   resolveCliRuntimeArtifactFingerprint?: typeof import("../agents/cli-auth-epoch.js").resolveCliRuntimeArtifactFingerprint;
   resolveCliRuntimeOwnerFingerprint?: typeof import("../agents/cli-auth-epoch.js").resolveCliRuntimeOwnerFingerprint;

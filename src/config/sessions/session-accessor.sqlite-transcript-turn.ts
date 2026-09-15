@@ -100,6 +100,8 @@ export async function appendExpectedSessionTranscriptTurn(
     ...scope,
     sessionId: options.expectedSessionId,
   });
+  const { restoreSessionColdTranscript } = await import("./session-cold-storage.js");
+  await restoreSessionColdTranscript({ ...scope, sessionId: options.expectedSessionId });
   return await runExclusiveSqliteSessionWrite(
     resolved,
     async () => {
@@ -282,7 +284,9 @@ export async function appendExpectedSessionTranscriptTurn(
         if (initialEntry || next !== appendedEntry) {
           const identityKeys = collectSessionEntryLookupKeys(transactionDb, resolved.sessionKey);
           const previousIdentity = readSessionIdentitySnapshot(transactionDb, identityKeys);
-          writeSessionEntry(transactionDb, resolved.sessionKey, next);
+          writeSessionEntry(transactionDb, resolved.sessionKey, next, {
+            canonicalPreviousEntry: previousIdentity.get(resolved.sessionKey) ?? null,
+          });
           const currentIdentity = readSessionIdentitySnapshot(transactionDb, identityKeys);
           publishIdentity = prepareSessionIdentityPublication(
             transactionDb,

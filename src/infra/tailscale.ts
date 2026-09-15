@@ -20,6 +20,11 @@ import { retryAsync } from "./retry.js";
 import { runtimeProcessEntrypoints } from "./runtime-process-entrypoints.js";
 import { resolveRuntimeWorkerUrl } from "./runtime-worker-url.js";
 import {
+  isTransientTailscaleStatusError,
+  parsePossiblyNoisyJsonObject,
+  waitForTailscaleBackendReady,
+} from "./tailscale-backend-ready.js";
+import {
   TAILSCALE_ROUTE_OWNER_ARG,
   type TailscaleRouteOwnerMessage,
 } from "./tailscale-route-owner-protocol.js";
@@ -33,16 +38,6 @@ const TAILSCALE_ROUTE_STOP_TIMEOUT_MS = 4_000;
 // so an authorized Tailscale retry keeps ownership of every operational error.
 const SUDO_NONINTERACTIVE_AUTH_ERROR =
   /^sudo: (?:a password is required|no password was provided|a terminal is required|no tty present|no askpass program specified)/im;
-
-function parsePossiblyNoisyJsonObject(stdout: string): Record<string, unknown> {
-  const trimmed = stdout.trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
-  }
-  return JSON.parse(trimmed) as Record<string, unknown>;
-}
 
 function tailnetHostnameFromStatus(parsed: Record<string, unknown>): string {
   const self =
@@ -63,32 +58,11 @@ function tailnetHostnameFromStatus(parsed: Record<string, unknown>): string {
   throw new Error("Could not determine Tailscale DNS or IP");
 }
 
-function isTransientTailscaleStatusError(error: unknown): boolean {
-  const record = readRecord(error);
-  const detail = [
-    error instanceof Error ? error.message : undefined,
-    typeof record?.stderr === "string" ? record.stderr : undefined,
-    typeof record?.stdout === "string" ? record.stdout : undefined,
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join("\n")
-    .toLowerCase();
-
-  return (
-    record?.timedOut === true ||
-    detail.includes("failed to connect to local tailscale daemon") ||
-    detail.includes("failed to connect to local tailscale service") ||
-    detail.includes("connection refused") ||
-    detail.includes("503 service unavailable")
-  );
-}
-
 /**
  * Locate Tailscale binary using multiple strategies:
  * 1. PATH lookup (via which command)
  * 2. Known macOS app path
- * 3. find /Applications for Tailscale.app
- * 4. locate database (if available)
+ * 3. locate database (if available)
  *
  * @returns Path to Tailscale binary or null if not found
  */
@@ -123,30 +97,7 @@ export async function findTailscaleBinary(): Promise<string | null> {
     return macAppPath;
   }
 
-  // Strategy 3: find command in /Applications
-  try {
-    const { stdout } = await runExec(
-      "find",
-      [
-        "/Applications",
-        "-maxdepth",
-        "3",
-        "-name",
-        "Tailscale",
-        "-path",
-        "*/Tailscale.app/Contents/MacOS/Tailscale",
-      ],
-      { timeoutMs: 5000 },
-    );
-    const found = stdout.trim().split("\n")[0];
-    if (found && (await checkBinary(found))) {
-      return found;
-    }
-  } catch {
-    // find failed, continue
-  }
-
-  // Strategy 4: locate command
+  // Strategy 3: locate command
   try {
     const { stdout } = await runExec("locate", ["Tailscale.app"]);
     const candidates = stdout
@@ -398,6 +349,7 @@ export async function claimTailscaleRoute(
   const start = async (bin: string, prefix: string[] = []) => {
     const exec = (args: string[]) =>
       runExec(bin, [...prefix, ...args], { timeoutMs: 5000, maxBuffer: 400_000 });
+    await waitForTailscaleBackendReady({ bin, prefix, info });
     const { stdout } = await exec(["serve", "status", "--json"]);
     const routes = extractTailscaleServeGatewayUrls(stdout, gatewayPort, true);
     // Foreground claims require a free port. Never clear sibling handlers or

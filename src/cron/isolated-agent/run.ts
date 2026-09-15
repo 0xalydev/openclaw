@@ -25,6 +25,7 @@ import { isCommandLaneTaskTimeoutError } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { removeCronRunContinuationSessionIfIdle } from "../../tasks/cron-run-continuation-cleanup.js";
+import { CronExecutionRootRuntimeError } from "../execution-root-runtime.js";
 import { createCronRunDiagnosticsFromError, mergeCronRunDiagnostics } from "../run-diagnostics.js";
 import { resolveCronRunErrorReason } from "../run-error-reason.js";
 import {
@@ -33,10 +34,7 @@ import {
 } from "../service/execution-errors.js";
 import type { CronAgentExecutionPhaseUpdate } from "../types.js";
 import { finalizeCronRun } from "./run-finalize.js";
-import {
-  CronExecutionRootRuntimeError,
-  type RunCronAgentTurnParams,
-} from "./run-prepare-runtime.js";
+import type { RunCronAgentTurnParams } from "./run-prepare-runtime.js";
 import { prepareCronRunContext } from "./run-prepare.js";
 import { CronSessionLifecycleClaimError, type MutableCronSession } from "./run-session-state.js";
 import { logWarn } from "./run.runtime.js";
@@ -114,7 +112,7 @@ export async function runCronIsolatedAgentTurn(
   if (!prepared.ok) {
     return { ...prepared.result, admissionDisposition: "rejected" };
   }
-  const preparedRuntimeLease = prepared.context.preparedModelRuntimeLease;
+  await using preparedRuntimeLease = prepared.context.preparedModelRuntimeLease;
   let leaseActive = true;
   // Accounting, delivery, and teardown use the same metadata as inference. Keep
   // the lease open until cleanup finishes, then fence detached borrowed work.
@@ -411,6 +409,5 @@ export async function runCronIsolatedAgentTurn(
     );
   } finally {
     leaseActive = false;
-    preparedRuntimeLease.release();
   }
 }

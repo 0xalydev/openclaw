@@ -10,6 +10,7 @@ import {
   isPreProgressToolVisibilityTarget,
   isPreProviderFailureBeforeOutputTarget,
   isPreQueueInvalidModeTarget,
+  isPreRichInlineCompositionTarget,
   isPreSettledEmptyResponseTarget,
   resolveFrozenTelegramScenarioOmissions,
 } from "../../scripts/e2e/lib/npm-telegram-live/resolve-target-scenarios.mts";
@@ -243,6 +244,9 @@ describe("package Telegram live Docker E2E", () => {
       'node --import tsx "$ROOT_DIR/scripts/e2e/lib/npm-telegram-live/prepare-package.mts" "$harness_package_json"',
     );
     expect(script).toContain('-v "$harness_package_json:/app/package.json:ro"');
+    expect(script).toContain(
+      '-v "$harness_package_json:/app/extensions/qa-lab/node_modules/openclaw/package.json:ro"',
+    );
     expect(script).toContain('-v "$ROOT_DIR/dist:/app/dist:ro"');
     expect(script).toContain('-v "$ROOT_DIR/node_modules:/trusted-harness/node_modules:ro"');
     expect(script).toContain('-v "$ROOT_DIR/packages:/app/packages:ro"');
@@ -303,6 +307,9 @@ describe("package Telegram live Docker E2E", () => {
     });
     expect(prepared.exports["./plugin-sdk/qa-lab"]).toEqual({
       default: "./dist/plugin-sdk/qa-lab.js",
+    });
+    expect(prepared.exports["./plugin-sdk/qa-channel-protocol"]).toEqual({
+      default: "./dist/plugin-sdk/qa-channel-protocol.js",
     });
     for (const subpath of privateLocalOnlyPluginSdkEntrypoints) {
       expect(prepared.exports[`./plugin-sdk/${subpath}`]).toEqual({
@@ -486,6 +493,16 @@ describe("package Telegram live Docker E2E", () => {
     expect(isPreQueueInvalidModeTarget(root)).toBe(false);
   });
 
+  it("omits rich inline composition until the frozen source owns its scenario", () => {
+    const root = mkTempRoot();
+    const scenario = path.join(root, "qa/scenarios/channels/telegram-rich-inline-composition.yaml");
+
+    expect(isPreRichInlineCompositionTarget(root)).toBe(true);
+    mkdirSync(path.dirname(scenario), { recursive: true });
+    writeFileSync(scenario, "id: telegram-rich-inline-composition\n");
+    expect(isPreRichInlineCompositionTarget(root)).toBe(false);
+  });
+
   it("combines only the unsupported frozen Telegram scenario contracts", () => {
     const root = mkTempRoot();
     const writeOwner = (relativePath: string, source: string) => {
@@ -506,6 +523,7 @@ describe("package Telegram live Docker E2E", () => {
       "telegram-progress-tool-visibility",
       "telegram-provider-failure-before-output",
       "telegram-queue-invalid-mode",
+      "telegram-rich-inline-composition",
     ]);
     writeOwner("extensions/telegram/src/draft-stream.ts", "waitForInFlight();");
     expect(resolveFrozenTelegramScenarioOmissions(root)).toEqual([
@@ -513,6 +531,7 @@ describe("package Telegram live Docker E2E", () => {
       "telegram-progress-tool-visibility",
       "telegram-provider-failure-before-output",
       "telegram-queue-invalid-mode",
+      "telegram-rich-inline-composition",
     ]);
     writeOwner(
       "qa/scenarios/channels/telegram-empty-response-after-write-recovery.yaml",
@@ -522,6 +541,7 @@ describe("package Telegram live Docker E2E", () => {
       "telegram-progress-tool-visibility",
       "telegram-provider-failure-before-output",
       "telegram-queue-invalid-mode",
+      "telegram-rich-inline-composition",
     ]);
     writeOwner(
       "qa/scenarios/channels/telegram-progress-tool-visibility.yaml",
@@ -530,15 +550,26 @@ describe("package Telegram live Docker E2E", () => {
     expect(resolveFrozenTelegramScenarioOmissions(root)).toEqual([
       "telegram-provider-failure-before-output",
       "telegram-queue-invalid-mode",
+      "telegram-rich-inline-composition",
     ]);
     writeOwner(
       "qa/scenarios/channels/telegram-provider-failure-before-output.yaml",
       "id: telegram-provider-failure-before-output\n",
     );
-    expect(resolveFrozenTelegramScenarioOmissions(root)).toEqual(["telegram-queue-invalid-mode"]);
+    expect(resolveFrozenTelegramScenarioOmissions(root)).toEqual([
+      "telegram-queue-invalid-mode",
+      "telegram-rich-inline-composition",
+    ]);
     writeOwner(
       "qa/scenarios/channels/telegram-queue-invalid-mode.yaml",
       "id: telegram-queue-invalid-mode\n",
+    );
+    expect(resolveFrozenTelegramScenarioOmissions(root)).toEqual([
+      "telegram-rich-inline-composition",
+    ]);
+    writeOwner(
+      "qa/scenarios/channels/telegram-rich-inline-composition.yaml",
+      "id: telegram-rich-inline-composition\n",
     );
     expect(resolveFrozenTelegramScenarioOmissions(root)).toEqual([]);
   });

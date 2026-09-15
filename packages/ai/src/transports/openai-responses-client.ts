@@ -47,6 +47,7 @@ import {
   buildOpenAIResponsesParams,
   sanitizeOpenAICodexResponsesParams,
 } from "./openai-responses-params-internal.js";
+import { resolveOpenAIResponsesPayloadPolicy } from "./openai-responses-payload-policy.js";
 import { createResponsesPromptEgressObserver } from "./openai-responses-prompt-observer-internal.js";
 import {
   recordResponsesReasoningState,
@@ -77,6 +78,7 @@ import {
   resolveCodeModeResponsesVisibleToolNames,
 } from "./openai-transport-params.js";
 import {
+  createResponseModelTracker,
   createOpenAIProviderAcceptanceHook,
   log,
   resolveOpenAIClientBaseUrl,
@@ -176,6 +178,23 @@ type ResponsesTransportExecutorOptions = {
   ) => ResponsesPricingOptions;
 };
 
+function withDefaultResponsesStreamEncoding(
+  fetch: typeof globalThis.fetch,
+): typeof globalThis.fetch {
+  return (input, init) => {
+    // Apply the SSE default after the SDK merges environment and caller headers.
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    if (headers.has("accept-encoding")) {
+      return fetch(input, init);
+    }
+    // Some compatible endpoints truncate compressed streams before the terminal event.
+    headers.set("accept-encoding", "identity");
+    return fetch(input, { ...init, headers });
+  };
+}
+
 function createResponsesTransportExecutor(config: ResponsesTransportExecutorOptions): StreamFn {
   return (model, context, options) => {
     const responsesOptions = options as OpenAIResponsesOptions | undefined;
@@ -232,7 +251,9 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
           httpHeaders,
           compactRequest
             ? createBoundedOpenAIResponsesCompactionFetch(buildGuardedModelFetch(model))
-            : undefined,
+            : config.streamRequest
+              ? withDefaultResponsesStreamEncoding(buildGuardedModelFetch(model))
+              : undefined,
         );
         const nativeAstra =
           model.id === "gpt-6-astra" && supportsNativeOpenAIResponsesEndpoint(model);
@@ -312,15 +333,18 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
           return;
         }
         const sessionId = options?.sessionId;
+        // Custom routes require an explicit capability; native routes retain
+        // their existing eligibility and final request storage checks below.
         const httpContinuationEligible =
           config.httpContinuation &&
           !websocketMode &&
           !getAiTransportHost().requiresManagedTransport(model) &&
-          supportsNativeOpenAIResponsesEndpoint({
+          (supportsNativeOpenAIResponsesEndpoint({
             provider: model.provider,
             api: model.api,
             baseUrl: model.baseUrl,
-          });
+          }) ||
+            resolveOpenAIResponsesPayloadPolicy(model).explicitContinuationOptIn);
         if (
           httpContinuationEligible &&
           sessionId &&
@@ -371,6 +395,7 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
             `baseUrl=${formatModelTransportDebugBaseUrl(model.baseUrl)} timeoutMs=${safeDebugValue(requestOptions?.timeout)} ` +
             `apiKey=${apiKey ? "present" : "missing"} ${summarizeResponsesPayload(params)}`,
         );
+        const responseModelTracker = createResponseModelTracker(isOpenAICodexResponsesModel(model));
         let continuationBaseline: ResponsesContinuationRequest | undefined;
         const createSseStream = async (
           initialRequest = (continuationClaim?.request ?? params) as typeof params,
@@ -393,8 +418,9 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
               continuationBaseline = attempt.request.previous_response_id
                 ? (params as ResponsesContinuationRequest)
                 : (attempt.request as ResponsesContinuationRequest);
+              const trackedResponseStream = responseModelTracker.track(response, rawResponseStream);
               return withProviderResponseHook({
-                stream: observeResponsesStream(rawResponseStream, model, requestStartedAt),
+                stream: observeResponsesStream(trackedResponseStream, model, requestStartedAt),
                 signal: firstEvent.signal,
                 abort: firstEvent.abort,
                 hook: createOpenAIProviderAcceptanceHook(options, response, model),
@@ -469,11 +495,12 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
                 `sessionIdHash=${redactIdentifier(options?.sessionId)} ` +
                 `headersHash=${redactIdentifier(JSON.stringify(Object.entries(websocketHeaders ?? {}).toSorted(([a], [b]) => a.localeCompare(b))))}`,
             );
+            const trackedWebSocketStream = responseModelTracker.track(undefined, websocket.stream);
             responseStream = {
               async *[Symbol.asyncIterator]() {
                 let providerAccepted = false;
                 try {
-                  for await (const event of websocket.stream) {
+                  for await (const event of trackedWebSocketStream) {
                     if (!providerAccepted) {
                       providerAccepted = true;
                       await notifyProviderStreamOpened({
@@ -548,6 +575,7 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
               sessionId: options?.sessionId,
             }),
             asyncToolExecution: asyncTools,
+            ...responseModelTracker.terminalOptions,
           });
           finishWebSocket?.();
           if (options?.signal?.aborted) {

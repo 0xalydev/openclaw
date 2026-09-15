@@ -14,6 +14,7 @@ import { resolveRunWorkspaceDir } from "../agents/workspace-run.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ActivateSetupInferenceDeps } from "../system-agent/setup-inference-core.js";
+import type { SetupInferenceConfigTarget } from "../system-agent/setup-inference-transition.js";
 import { verifySetupInferenceConfig } from "../system-agent/setup-inference-turn.js";
 import type { WizardPrompter } from "./prompts.js";
 import type { SetupModelAuthCandidate } from "./setup.model-auth.js";
@@ -33,6 +34,27 @@ vi.mock("./setup.model-auth.js", () => ({
 }));
 
 import { offerLiveModelVerification } from "./setup.inference-verification.js";
+
+function verifyWithMemoryConfig(
+  params: Omit<Parameters<typeof offerLiveModelVerification>[0], "configTarget"> & {
+    writeConfig: (config: OpenClawConfig) => Promise<OpenClawConfig>;
+  },
+) {
+  let current = structuredClone(params.config);
+  const target: SetupInferenceConfigTarget = {
+    write: async (config, options) => {
+      const before = current;
+      options.captureUndo(async () => {
+        current = before;
+        return { config: current, written: true };
+      });
+      current = await params.writeConfig(config);
+      return current;
+    },
+    read: async () => ({ config: current, write: target.write }),
+  };
+  return offerLiveModelVerification({ ...params, configTarget: target });
+}
 
 const tempRoots = createTempDirTracker();
 afterEach(() => tempRoots.cleanup());
@@ -101,7 +123,14 @@ describe("offerLiveModelVerification", () => {
       attemptedProfiles.push(profileId);
       const store = readAuthProfileStoreForTest(agentDir);
       expect(profileId).toMatch(/^openai:setup-/);
-      expect(store.profiles[profileId]).toEqual(replacement.credential);
+      expect(store.profiles[profileId]).toMatchObject({
+        ...replacement.credential,
+        setup: {
+          replacement: true,
+          modelRef: "openai/test-model",
+          configJson: expect.any(String),
+        },
+      });
       expect(store.profiles[working.profileId]).toEqual(working.credential);
       expect(tested.browser).toEqual({ enabled: false });
       return { ok: false, status: "auth", error: "credential rejected" };
@@ -120,11 +149,11 @@ describe("offerLiveModelVerification", () => {
       required: true,
     };
     try {
-      await expect(offerLiveModelVerification(params)).resolves.toMatchObject({
+      await expect(verifyWithMemoryConfig(params)).resolves.toMatchObject({
         verified: false,
         persisted: false,
       });
-      await expect(offerLiveModelVerification(params)).resolves.toMatchObject({
+      await expect(verifyWithMemoryConfig(params)).resolves.toMatchObject({
         verified: false,
         persisted: false,
       });
@@ -201,7 +230,7 @@ describe("offerLiveModelVerification", () => {
     );
     const writeConfig = vi.fn(async (next: OpenClawConfig) => next);
     const persistAuthProfiles = vi.fn(async () => {});
-    const verification = offerLiveModelVerification({
+    const verification = verifyWithMemoryConfig({
       config,
       initialCandidate: { config, authProfiles: [], persistAuthProfiles },
       opts: { nonInteractive: true },
@@ -219,7 +248,8 @@ describe("offerLiveModelVerification", () => {
         persisted: true,
         config: before,
       });
-      expect(writeConfig).toHaveBeenCalledExactlyOnceWith(before);
+      expect(writeConfig).toHaveBeenCalledOnce();
+      expect(writeConfig.mock.calls[0]?.[0]).toEqual(before);
       expect(runEmbeddedAgent).toHaveBeenCalledOnce();
     } else {
       await expect(verification).rejects.toThrow("No agents configured");
@@ -236,7 +266,7 @@ describe("offerLiveModelVerification", () => {
     const prompter = { ...createPrompter(), select };
 
     await expect(
-      offerLiveModelVerification({
+      verifyWithMemoryConfig({
         config: { agents: { defaults: { model: { primary: "openai/gpt-5.6-sol" } } } },
         opts: { nonInteractive: true },
         prompter,
@@ -266,7 +296,7 @@ describe("offerLiveModelVerification", () => {
     };
 
     await expect(
-      offerLiveModelVerification({
+      verifyWithMemoryConfig({
         config: { agents: { defaults: { model: { primary: "openai/gpt-5.6-sol" } } } },
         opts: { nonInteractive: true },
         prompter,
@@ -308,7 +338,7 @@ describe("offerLiveModelVerification", () => {
     };
 
     await expect(
-      offerLiveModelVerification({
+      verifyWithMemoryConfig({
         config: { agents: { entries: { main: { default: true } } } },
         opts: {},
         prompter,
@@ -349,7 +379,7 @@ describe("offerLiveModelVerification", () => {
     });
     mocks.repair.mockRejectedValue(new Error("repair cancelled"));
     await expect(
-      offerLiveModelVerification({
+      verifyWithMemoryConfig({
         config,
         initialCandidate: { config, authProfiles: [], persistAuthProfiles },
         opts: {},
@@ -382,7 +412,7 @@ describe("offerLiveModelVerification", () => {
     vi.mocked(prompter.confirm).mockResolvedValue(false);
     const writeConfig = vi.fn(async (next: OpenClawConfig) => next);
     expect(
-      await offerLiveModelVerification({
+      await verifyWithMemoryConfig({
         config,
         opts: {},
         prompter,

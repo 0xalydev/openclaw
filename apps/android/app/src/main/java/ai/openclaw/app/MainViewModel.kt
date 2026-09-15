@@ -20,6 +20,7 @@ import ai.openclaw.app.chat.GatewayDefaultAgentOwner
 import ai.openclaw.app.chat.MessageSpeechState
 import ai.openclaw.app.chat.OutgoingAttachment
 import ai.openclaw.app.chat.SessionBranch
+import ai.openclaw.app.chat.SessionDiffSnapshot
 import ai.openclaw.app.chat.SessionForkResult
 import ai.openclaw.app.chat.SessionRewindResult
 import ai.openclaw.app.chat.defaultChatThinkingLevelSelection
@@ -532,6 +533,8 @@ class MainViewModel private constructor(
   val sidebarVisiblePages: StateFlow<List<String>> = prefs.sidebarVisiblePages
   val sessionCatalogAvailable: StateFlow<Boolean> =
     runtimeState(initial = false) { it.sessionCatalogAvailable }
+  internal val sessionDiffAvailable: StateFlow<Boolean> =
+    runtimeState(initial = false) { it.sessionDiffAvailable }
   val sessionCatalogState: StateFlow<SessionCatalogState> =
     runtimeState(initial = SessionCatalogState()) { it.sessionCatalogState }
   val talkSetupReadiness: StateFlow<GatewayTalkSetupReadiness> =
@@ -577,6 +580,7 @@ class MainViewModel private constructor(
   internal val healthLogsState = runtimeState(initial = GatewaySummaryState<GatewayHealthLogsSummary>()) { it.healthLogsState }
   val pendingGatewayTrust: StateFlow<NodeRuntime.GatewayTrustPrompt?> = runtimeState(initial = null) { it.pendingGatewayTrust }
   val gatewayAccentArgb: StateFlow<Long?> = runtimeState(initial = null) { it.gatewayAccentArgb }
+  val gatewaySourcePreviewConfig: StateFlow<ai.openclaw.app.gateway.GatewaySourcePreviewConfig?> = runtimeState(initial = null) { it.gatewaySourcePreviewConfig }
   val mainSessionKey: StateFlow<String> = runtimeState(initial = "main") { it.mainSessionKey }
 
   val instanceId: StateFlow<String> = prefs.instanceId
@@ -1389,6 +1393,11 @@ class MainViewModel private constructor(
     failedResource: ChatWidgetResource?,
   ) = ensureRuntime().resolveInlineWidgetResource(path, failedResource)
 
+  internal suspend fun loadChatSourceFavicon(
+    config: ai.openclaw.app.gateway.GatewaySourcePreviewConfig,
+    hostname: String,
+  ) = ensureRuntime().loadChatSourceFavicon(config, hostname)
+
   internal suspend fun loadChatImageArtifact(artifactId: String) = ensureRuntime().loadChatImageArtifact(artifactId)
 
   internal suspend fun loadChatMediaArtifact(
@@ -1671,7 +1680,7 @@ class MainViewModel private constructor(
 
   suspend fun switchChatSessionBranch(leafEntryId: String): Boolean = ensureRuntime().switchChatSessionBranch(leafEntryId)
 
-  internal fun isCurrentChatBranchTarget(
+  internal fun isCurrentChatSelection(
     owner: ChatComposerOwner,
     selectionGeneration: Long,
   ): Boolean {
@@ -1684,7 +1693,7 @@ class MainViewModel private constructor(
     selectionGeneration: Long,
   ): Boolean {
     val runtime = runtimeRef.value ?: return false
-    return isCurrentChatBranchTarget(owner, selectionGeneration) && runtime.canSwitchChatSessionBranch(owner.sessionKey)
+    return isCurrentChatSelection(owner, selectionGeneration) && runtime.canSwitchChatSessionBranch(owner.sessionKey)
   }
 
   internal fun canSwitchChatSessionBranch(
@@ -1698,6 +1707,12 @@ class MainViewModel private constructor(
       !runtime.chatSessionBranchesLoading.value &&
       runtime.chatSessionBranches.value.any { it.leafEntryId == leafEntryId && !it.active }
   }
+
+  suspend fun loadSessionDiff(
+    sessionKey: String,
+    agentId: String?,
+    expectedGatewayStableId: String,
+  ): SessionDiffSnapshot = ensureRuntime().loadSessionDiff(sessionKey, agentId, expectedGatewayStableId)
 
   suspend fun listWorkspaceFiles(
     path: String?,
@@ -1814,6 +1829,15 @@ class MainViewModel private constructor(
     (
       currentChatComposerOwner() ?: currentOrProvisionalChatComposerOwner()
     ) == expected
+
+  internal fun createProviderAuthController(owner: ChatComposerOwner): ProviderAuthController? {
+    val runtime = ensureRuntime()
+    if (!owner.routingVerified || !isCurrentChatComposerOwner(owner) || !runtime.operatorAdminScopeAvailable.value) return null
+    val selectionGeneration = runtime.chatSelectionGeneration.value
+    return runtime.createProviderAuthController(owner) {
+      runtimeRef.value === runtime && isCurrentChatSelection(owner, selectionGeneration) && runtime.operatorAdminScopeAvailable.value
+    }
+  }
 
   internal fun resolveChatComposerOwnerAliases(
     to: ChatComposerOwner,

@@ -96,6 +96,7 @@ describe("withTelegramPlainFallback", () => {
 
   it.each([
     { kind: "rich" as const, message: "Bad Request: RICH_MESSAGE_URL_INVALID" },
+    { kind: "rich" as const, message: "Bad Request: rich message must be non-empty" },
     { kind: "html" as const, message: "Bad Request: message text is empty" },
   ])("rethrows $kind failures when plain text is empty", async ({ kind, message }) => {
     const error = new Error(message);

@@ -54,7 +54,7 @@ describe("renderModelSetup", () => {
     expect(text(container)).toContain("openai/gpt-5 · Signed in locally");
     expect(text(container)).toContain("Found, but needs attention");
     expect(text(container)).toContain("This local runtime must be configured outside OpenClaw");
-    expect(text(container)).toContain("Connect an AI provider");
+    expect(text(container)).toContain("Set up and verify a model");
     expect(text(container)).toContain("Run a model locally");
     expect(text(container)).toContain("LM Studio");
     expect(text(container)).toContain("Connect with an API key or token");
@@ -844,7 +844,7 @@ describe("renderModelSetup", () => {
       deviceCode: { code: "ABCD-EFGH" },
     });
 
-    const copy = container.querySelector<HTMLButtonElement>(".wizard-step__device-code button");
+    const copy = container.querySelector<HTMLButtonElement>(".wizard-step__sign-in button");
     copy?.click();
 
     const feedback = copied ? "Copied!" : "Copy failed";
@@ -893,7 +893,7 @@ describe("renderModelSetup", () => {
       },
       "personal",
     );
-    expect(select.querySelectorAll('input[type="radio"]')).toHaveLength(2);
+    expect(select.querySelectorAll(".wizard-step__actions button")).toHaveLength(2);
     expect(text(select)).toContain("Your account");
 
     const confirm = wizardStep({ id: "confirm", type: "confirm", message: "Continue?" });
@@ -934,6 +934,48 @@ describe("renderModelSetup", () => {
     expect(container.querySelector('[role="status"]')).not.toBeNull();
     expect(container.querySelector(".wizard-step__spinner")).not.toBeNull();
     expect(container.querySelector(".wizard-step__progress button")).toBeNull();
+  });
+
+  it("shows the browser sign-in link during gateway progress without requiring an answer", () => {
+    const onWizardAnswer = vi.fn();
+    const onWizardCancel = vi.fn();
+    const destination = "https://provider.example/oauth?state=state-1";
+    const container = mount(
+      props({
+        wizard: {
+          phase: "step",
+          authChoice: "provider-auth",
+          step: {
+            id: "browser-sign-in",
+            type: "progress",
+            executor: "gateway",
+            externalUrl: destination,
+            message: "Waiting for sign-in",
+          },
+          busy: false,
+          validationError: null,
+        },
+        onWizardAnswer,
+        onWizardCancel,
+      }),
+    );
+
+    const wizard = container.querySelector(".model-setup-wizard")!;
+    const link = wizard.querySelector<HTMLAnchorElement>("a");
+    expect(link?.href).toBe(destination);
+    expect(link?.target).toBe("_blank");
+    expect(link?.rel).toBe("noreferrer");
+    expect(link?.textContent?.trim()).toBe("Open sign-in");
+    expect(wizard.querySelector('[role="status"]')?.textContent).toContain("Waiting for sign-in");
+    expect(
+      [...wizard.querySelectorAll("button")].map((button) => button.textContent?.trim()),
+    ).toEqual(["Copy link", "Cancel"]);
+    expect(onWizardAnswer).not.toHaveBeenCalled();
+    [...wizard.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.trim() === "Cancel")
+      ?.click();
+    expect(onWizardCancel).toHaveBeenCalledOnce();
+    expect(onWizardAnswer).not.toHaveBeenCalled();
   });
 
   it("keeps a Continue action for client progress", () => {

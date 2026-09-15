@@ -73,6 +73,10 @@ An explicitly empty or whitespace-only `--account` value is rejected. Omit the
 option to use the existing default or bound account, including when a shell
 variable is empty. Nonblank account values keep their existing selection rules.
 
+An explicitly empty or whitespace-only `--channel` value is also rejected. Omit
+the option to select the sole configured channel, or use a channel-prefixed
+target when supported.
+
 Discord message bodies, captions, poll context, and component text retain
 leading indentation. Existing empty-message validation still applies.
 Ordinary message and caption delivery still trims trailing whitespace.
@@ -110,13 +114,27 @@ unresolved SecretRef on the selected channel/account fails the action closed.
 | `pins` (list)   | Discord, Matrix, Microsoft Teams, Slack                                                                         | `--target`                                                     | `--limit`.                                                                                                                                                                                                                                                                                             |
 | `permissions`   | Discord, Matrix                                                                                                 | `--target`                                                     | Matrix: available only when encryption is enabled and verification actions are allowed.                                                                                                                                                                                                                |
 | `search`        | Discord                                                                                                         | `--guild-id`, `--query`                                        | `--channel-id`, `--channel-ids` (repeat), `--author-id`, `--author-ids` (repeat), `--limit`.                                                                                                                                                                                                           |
-| `member info`   | Discord, Matrix, Microsoft Teams, Slack                                                                         | `--user-id`                                                    | `--guild-id` (Discord).                                                                                                                                                                                                                                                                                |
+| `member info`   | Discord, Matrix, Microsoft Teams, Slack                                                                         | `--user-id`                                                    | `--channel-id` (required for Matrix and Microsoft Teams), `--guild-id` (Discord).                                                                                                                                                                                                                      |
 
 Reaction listings show labels, counts, and available users as plain terminal text.
 Use `--json` for the complete channel result.
 
 The legacy `message read --include-thread` spelling remains accepted for existing
 scripts but has no effect.
+
+### Member info
+
+Use `--channel-id` to select a Matrix room or a Microsoft Teams standard channel.
+Teams requires the Graph `<team-id>/<channel-id>` form because the CLI has no
+current conversation. Provider access and membership checks still apply.
+
+```bash
+openclaw message member info --channel matrix \
+  --channel-id '!room:example.org' --user-id '@member:example.org'
+
+openclaw message member info --channel msteams \
+  --channel-id '<team-id>/<channel-id>' --user-id '<aad-object-id>'
+```
 
 ### Send
 

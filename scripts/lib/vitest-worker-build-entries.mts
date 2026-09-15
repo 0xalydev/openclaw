@@ -1,5 +1,8 @@
 import { fileURLToPath } from "node:url";
+import { logbookSqliteBackendEntrypoint } from "../../extensions/logbook/src/sqlite-backend-entrypoint.test-support.ts";
 import { qaGatewayCleanupRuntimeEntrypoint } from "../../extensions/qa-lab/src/gateway-child-artifacts-runtime.test-support.ts";
+import { teamReportsSqliteBackendEntrypoint } from "../../extensions/team-reports/src/sqlite-backend-entrypoint.test-support.ts";
+import { workboardSqliteBackendEntrypoint } from "../../extensions/workboard/src/sqlite-backend-entrypoint.test-support.ts";
 import {
   codeModeDescriptionRetentionEntrypoint,
   codeModeRetentionEntrypoint,
@@ -10,6 +13,7 @@ import {
   gatewayDirectStopEntrypoints,
   stateDirGatewayFixtureEntrypoint,
 } from "../../src/cli/cli-entrypoint.test-support.ts";
+import { updateExecutorNativeEntrypoints } from "../../src/cli/update-cli/update-command-executor-native-runtime.test-support.ts";
 import { doctorConfigRuntimeEntrypoints } from "../../src/commands/doctor-config-runtime.test-support.ts";
 import { cronOwnerHardeningEntrypoints } from "../../src/cron/owner-hardening-runtime.test-support.ts";
 import { sessionListCacheRetentionEntrypoint } from "../../src/gateway/server-methods/sessions-list-cache-retention-entrypoint.test-support.ts";
@@ -29,9 +33,25 @@ import {
   agentDatabaseHeldRuntimeEntrypoint,
   stateLeaseProcessExitRuntimeEntrypoint,
 } from "../../src/state/openclaw-state-lease-runtime.test-support.ts";
+import { groqSetupSdkEntrypoints } from "../../src/system-agent/setup-inference-groq-sdk.test-support.ts";
 import { tuiPtyRuntimeEntrypoints } from "../../src/tui/tui-pty-runtime-test-support.ts";
 import { channelIngressGatewayRestartEntrypoint } from "../../test/fixtures/channel-ingress-gateway-restart-entrypoint.ts";
 import { runtimeProcessBuildEntries } from "./runtime-process-build-entries.mts";
+
+// These fixture hooks require physical module boundaries and complete namespaces.
+export const legacyFinalizerBuildSources = [
+  "src/cli/update-cli/update-command-legacy-finalize.test-support.ts",
+  "src/infra/update-migrated-finalize.worker.ts",
+  "src/infra/runtime-process-entrypoints.ts",
+  "src/cli/update-cli/update-command-service-plan.ts",
+  "src/cli/update-cli/update-command-repair-service.ts",
+  "src/infra/tmp-openclaw-dir.ts",
+  "src/cli/update-cli/update-command-convergence.ts",
+  "src/cli/update-cli/update-command-restart-context.ts",
+  "src/daemon/gateway-entrypoint.ts",
+  "src/cli/update-cli/update-command-verification.ts",
+  "src/cli/update-cli/shared.ts",
+];
 
 // Test-only roots share the invocation generation without changing package entries.
 export const vitestWorkerBuildEntries = {
@@ -45,7 +65,9 @@ export const vitestWorkerBuildEntries = {
       ...cliCompactionBackendEntrypoints,
       ...publishedSdkBridgeEntrypoints,
       mcpProviderCatalogEntrypoint,
+      ...groqSetupSdkEntrypoints,
       ...Object.values(cliRecoveryEntrypoints),
+      ...Object.values(updateExecutorNativeEntrypoints),
       ...Object.values(gatewayDirectStopEntrypoints),
       stateDirGatewayFixtureEntrypoint,
       ...Object.values(doctorConfigRuntimeEntrypoints),
@@ -58,6 +80,9 @@ export const vitestWorkerBuildEntries = {
       channelIngressGatewayRestartEntrypoint,
       persistenceRuntimeEntrypoint,
       qaGatewayCleanupRuntimeEntrypoint,
+      logbookSqliteBackendEntrypoint,
+      teamReportsSqliteBackendEntrypoint,
+      workboardSqliteBackendEntrypoint,
       stateLeaseProcessExitRuntimeEntrypoint,
       agentDatabaseHeldRuntimeEntrypoint,
     ].map((entry) => [

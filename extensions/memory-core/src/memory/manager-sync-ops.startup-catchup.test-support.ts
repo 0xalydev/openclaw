@@ -48,8 +48,6 @@ type MemorySessionTranscriptUpdate = {
   };
 };
 
-const originalStartupStateDir = process.env.OPENCLAW_STATE_DIR;
-const originalStartupConfigPath = process.env.OPENCLAW_CONFIG_PATH;
 let transcriptUpdateListener: ((update: MemorySessionTranscriptUpdate) => void) | undefined;
 
 /** Clears the module-owned listener between tests; ESM bindings cannot be reassigned by importers. */
@@ -93,32 +91,17 @@ function createStartupHarnessDatabase(sourceRows: SourceStateRow[]): DatabaseSyn
   startupHarnessDatabases.add(db);
   return db;
 }
-export function setStartupStateDir(stateDir: string): void {
-  Reflect.set(process.env, "OPENCLAW_STATE_DIR", stateDir);
-}
-
-export function setStartupConfigPath(configPath: string): void {
-  Reflect.set(process.env, "OPENCLAW_CONFIG_PATH", configPath);
-}
-
-export function restoreStartupEnv(): void {
-  if (originalStartupStateDir === undefined) {
-    Reflect.deleteProperty(process.env, "OPENCLAW_STATE_DIR");
-  } else {
-    Reflect.set(process.env, "OPENCLAW_STATE_DIR", originalStartupStateDir);
-  }
-  if (originalStartupConfigPath === undefined) {
-    Reflect.deleteProperty(process.env, "OPENCLAW_CONFIG_PATH");
-  } else {
-    Reflect.set(process.env, "OPENCLAW_CONFIG_PATH", originalStartupConfigPath);
-  }
-}
-
 export function emitSessionTranscriptUpdate(update: MemorySessionTranscriptUpdate): void {
   transcriptUpdateListener?.(update);
 }
 
 export class SessionStartupCatchupHarness extends MemoryManagerSyncOps {
+  protected readonly createProvider = (): never => {
+    throw new Error("Startup catch-up harness does not acquire embedding providers");
+  };
+  protected releaseProvider(): never {
+    throw new Error("Startup catch-up harness does not own embedding providers");
+  }
   protected readonly cfg = {} as OpenClawConfig;
   protected readonly agentId = "main";
   protected readonly workspaceDir = "/tmp/openclaw-test-workspace";

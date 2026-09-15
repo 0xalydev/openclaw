@@ -8,6 +8,7 @@ import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import { withMockedWindowsPlatform } from "../test-utils/vitest-spies.js";
 import { pathExists } from "../utils.js";
+import * as container from "./container-environment.js";
 import { resolveStableNodePath } from "./stable-node-path.js";
 import type { UpdateChannel } from "./update-channels.js";
 import type { DevUpdateTarget } from "./update-dev-target.js";
@@ -451,6 +452,7 @@ describe("runGatewayUpdate", () => {
   type TestCommandOptions = {
     env?: NodeJS.ProcessEnv;
     cwd?: string;
+    input?: string | Uint8Array;
     timeoutMs?: number;
   };
 
@@ -660,6 +662,7 @@ describe("runGatewayUpdate", () => {
         }
         return await runCommandWithTimeout(argv, {
           cwd: options.cwd,
+          input: options.input,
           env: options.env,
           timeoutMs: options.timeoutMs ?? 5000,
         });
@@ -860,7 +863,7 @@ describe("runGatewayUpdate", () => {
       code: 0,
       stdout: " M README.md",
       stderr: "",
-      status: "skipped",
+      status: "error",
       reason: "dirty",
     },
     {
@@ -889,7 +892,11 @@ describe("runGatewayUpdate", () => {
         [`git -C ${tempDir} status --porcelain -- :!dist/control-ui/`]: { code, stdout, stderr },
       });
 
-      const result = await runWithRunner(runner, { beforeGitMutation });
+      const onStepComplete = vi.fn();
+      const result = await runWithCommand(runner, {
+        beforeGitMutation,
+        progress: { onStepComplete },
+      });
 
       expect(result.status).toBe(status);
       expect(result.reason).toBe(reason);
@@ -901,11 +908,16 @@ describe("runGatewayUpdate", () => {
       expect(result.steps).toMatchObject([
         {
           name: "clean check",
-          exitCode: code,
+          exitCode: reason === "dirty" ? 1 : code,
           stdoutTail: stdout || null,
-          stderrTail: stderr || null,
+          stderrTail:
+            reason === "dirty" ? expect.stringContaining("local changes") : stderr || null,
         },
       ]);
+      expect(onStepComplete).toHaveBeenCalledOnce();
+      expect(onStepComplete).toHaveBeenCalledWith(
+        expect.objectContaining({ exitCode: reason === "dirty" ? 1 : code }),
+      );
       expect(beforeGitMutation).not.toHaveBeenCalled();
       expect(calls.some((call) => call.includes(" fetch "))).toBe(false);
       expect(calls.filter((call) => call.includes("rebase"))).toEqual([]);
@@ -1155,7 +1167,8 @@ describe("runGatewayUpdate", () => {
       "refused by caller",
     );
     expect(beforeGitMutation).toHaveBeenCalledWith({
-      metadataUnreadable: expect.stringContaining("exited 128"),
+      sha: upstreamSha,
+      metadataUnreadable: `git show ${upstreamSha}:package.json exited 128`,
     });
   });
 
@@ -1998,13 +2011,13 @@ describe("runGatewayUpdate", () => {
   );
 
   it.each([
-    { operation: "mkdir", code: "ENOSPC", reason: "preflight-insufficient-space" },
-    { operation: "mkdtemp", code: "ENOSPC", reason: "preflight-insufficient-space" },
-    { operation: "mkdir", code: "EACCES", reason: "preflight-worktree-failed" },
-    { operation: "mkdtemp", code: "EROFS", reason: "preflight-worktree-failed" },
+    ["mkdir", "ENOSPC", "preflight-insufficient-space"],
+    ["mkdtemp", "ENOSPC", "preflight-insufficient-space"],
+    ["mkdir", "EACCES", "preflight-worktree-failed"],
+    ["mkdtemp", "EROFS", "preflight-worktree-failed"],
   ] as const)(
-    "returns a structured preflight failure when $operation rejects with $code",
-    async ({ operation, code, reason }) => {
+    "returns a structured preflight failure when %s rejects with %s",
+    async (operation, code, reason) => {
       await setupGitPackageManagerFixture();
       const beforeGitMutation = vi.fn<() => Promise<void>>();
       const allocator = vi.spyOn(fs, operation);
@@ -2031,66 +2044,39 @@ describe("runGatewayUpdate", () => {
   );
 
   it.each([
-    {
-      command: "pnpm install",
-      stdout: "[ENOSPC] ENOSPC: no space left on device, write",
-      stderr: "",
-      capacity: true,
-    },
-    {
-      command: "pnpm install",
-      stdout:
-        "[ERR_PNPM_ENOSPC] [importPackage /checkout/node_modules/package] ENOSPC: no space left on device, copyfile 'store' -> 'package'",
-      stderr: "",
-      capacity: true,
-    },
-    {
-      command: "pnpm build",
-      stdout: "",
-      stderr: "Error: ENOSPC: no space left on device, write",
-      capacity: true,
-    },
-    {
-      command: "pnpm install",
-      stdout: "",
-      stderr:
-        "\u001b[31m[ERR_PNPM_ENOSPC]\u001b[0m ENOSPC: no space left on device, copyfile 'store' -> 'package'",
-      capacity: true,
-    },
-    {
-      command: "pnpm install",
-      stdout: "[ERR_SQLITE_ERROR] disk I/O error",
-      stderr: "",
-      capacity: false,
-    },
-    {
-      command: "pnpm build",
-      stdout: "",
-      stderr: "Error: ENOSPC: System limit for number of file watchers reached, watch 'src'",
-      capacity: false,
-    },
-    { command: "pnpm install", stdout: "", stderr: "ERR_PNPM_NETWORK", capacity: false },
-    {
-      command: "pnpm build",
-      stdout: "",
-      stderr: "test expected ENOSPC or disk full",
-      capacity: false,
-    },
-    {
-      command: "pnpm build",
-      stdout: "",
-      stderr: "test expected fatal: unable to create file: No space left on device",
-      capacity: false,
-    },
-    {
-      command: "pnpm build",
-      stdout: "",
-      stderr: "fatal: unable to create file: No space left on device (expected)",
-      capacity: false,
-    },
+    ["pnpm install", "[ENOSPC] ENOSPC: no space left on device, write", "", true],
+    [
+      "pnpm install",
+      "[ERR_PNPM_ENOSPC] [importPackage /checkout/node_modules/package] ENOSPC: no space left on device, copyfile 'store' -> 'package'",
+      "",
+      true,
+    ],
+    ["pnpm build", "", "Error: ENOSPC: no space left on device, write", true],
+    [
+      "pnpm install",
+      "",
+      "\u001b[31m[ERR_PNPM_ENOSPC]\u001b[0m ENOSPC: no space left on device, copyfile 'store' -> 'package'",
+      true,
+    ],
+    ["pnpm install", "[ERR_SQLITE_ERROR] disk I/O error", "", false],
+    [
+      "pnpm build",
+      "",
+      "Error: ENOSPC: System limit for number of file watchers reached, watch 'src'",
+      false,
+    ],
+    ["pnpm install", "", "ERR_PNPM_NETWORK", false],
+    ["pnpm build", "", "test expected ENOSPC or disk full", false],
+    [
+      "pnpm build",
+      "",
+      "test expected fatal: unable to create file: No space left on device",
+      false,
+    ],
+    ["pnpm build", "", "fatal: unable to create file: No space left on device (expected)", false],
   ])(
-    "handles dev preflight failure without misclassifying capacity: $command $stdout $stderr",
-    async ({ command, stdout, stderr, capacity }) => {
+    "handles dev preflight failure without misclassifying capacity: %s %s %s",
+    async (command, stdout, stderr, capacity) => {
       await setupGitPackageManagerFixture();
       let failed = false;
       const { runCommand, calls } = createDevGitRunner({
@@ -2133,25 +2119,19 @@ describe("runGatewayUpdate", () => {
   );
 
   it.each([
-    {
-      stderr: "fatal: unable to create file: No space left on device",
-      reason: "preflight-insufficient-space",
-    },
-    {
-      stderr: "error: cannot create directory at 'src': No space left on device",
-      reason: "preflight-insufficient-space",
-    },
-    {
-      stderr: "fatal: could not create leading directories of 'worktree': No space left on device",
-      reason: "preflight-insufficient-space",
-    },
-    {
-      stderr: "fatal: unable to create file: Permission denied",
-      reason: "preflight-worktree-failed",
-    },
+    ["fatal: unable to create file: No space left on device", "preflight-insufficient-space"],
+    [
+      "error: cannot create directory at 'src': No space left on device",
+      "preflight-insufficient-space",
+    ],
+    [
+      "fatal: could not create leading directories of 'worktree': No space left on device",
+      "preflight-insufficient-space",
+    ],
+    ["fatal: unable to create file: Permission denied", "preflight-worktree-failed"],
   ])(
-    "classifies preflight worktree creation failure and removes partial staging: $stderr",
-    async ({ stderr, reason }) => {
+    "classifies preflight worktree creation failure and removes partial staging: %s",
+    async (stderr, reason) => {
       await setupGitPackageManagerFixture();
       const roots: string[] = [];
       const { runCommand } = createDevGitRunner({
@@ -3056,6 +3036,7 @@ describe("runGatewayUpdate", () => {
   });
 
   it("skips update when no git root", async () => {
+    vi.spyOn(container, "isContainerEnvironment").mockReturnValueOnce(false);
     await fs.writeFile(
       path.join(tempDir, "package.json"),
       JSON.stringify({ name: "openclaw", packageManager: PNPM_PACKAGE_MANAGER }),
@@ -3071,7 +3052,8 @@ describe("runGatewayUpdate", () => {
     const result = await runWithRunner(runner);
 
     expect(result.status).toBe("skipped");
-    expect(result.reason).toBe("not-git-install");
+    expect(result.reason).toBe("unmanaged-package-install");
+    expect(result.recovery).toBeUndefined();
     const pnpmGlobalInstallCalls = calls.filter((call) => call.startsWith("pnpm add -g"));
     const npmGlobalInstallCalls = calls.filter((call) => call.startsWith("npm i -g"));
     expect(pnpmGlobalInstallCalls).toStrictEqual([]);
@@ -3098,7 +3080,7 @@ describe("runGatewayUpdate", () => {
       status: "skipped",
       mode: "unknown",
       root: pkgRoot,
-      reason: "not-git-install",
+      reason: "package-update-requires-cli",
       before: { version: "1.0.0" },
       steps: [],
     });

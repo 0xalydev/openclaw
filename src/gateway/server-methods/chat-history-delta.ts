@@ -9,7 +9,7 @@ import { jsonUtf8BytesOrInfinity } from "../../infra/json-utf8-bytes.js";
 import { isOpenClawDeliveryMirrorAssistantMessage } from "../../shared/transcript-only-openclaw-assistant.js";
 import {
   createCurrentUserProfileMessageProjector,
-  projectChatDisplayMessagesWithState,
+  isAssistantTtsSupplementMessage,
 } from "../chat-display-projection.js";
 import { resolveCurrentUserProfileDisplay } from "../current-user-profile-display.js";
 import {
@@ -91,22 +91,14 @@ export function readChatHistoryDelta(params: {
       // Mirror suppression needs the preceding reply, which can be before this cursor.
       return { kind: "reset" };
     }
-    const messageId = asOptionalRecord(row.event)?.id;
-    const historyProjection = projectChatDisplayMessagesWithState([entryMessage], {
-      ...projectionState,
-      includeCommentaryFallbacks: true,
-    });
-    if (
-      historyProjection.messages.some(
-        (message) => asOptionalRecord(message.openclawStreamFallback)?.source === "segment",
-      )
-    ) {
-      // One transcript entry can own both commentary and a tool call. The single-message
-      // envelope cannot carry that split; let the full history owner reconcile both rows.
+    if (isAssistantTtsSupplementMessage(entryMessage)) {
+      // Full history owns merging audio into a reply that can precede this cursor.
       return { kind: "reset" };
     }
+    const messageId = asOptionalRecord(row.event)?.id;
     const projected = projectSessionMessagePayload({
       agentId: params.agentId,
+      historyDelta: true,
       message: entryMessage,
       ...(typeof messageId === "string" && messageId ? { messageId } : {}),
       messageSeq: row.messageSeq,
@@ -116,6 +108,9 @@ export function readChatHistoryDelta(params: {
       sessionKey: params.sessionKey,
       sessionSnapshot: params.sessionSnapshot,
     });
+    if (projected.requiresHistoryReset) {
+      return { kind: "reset" };
+    }
     projectionState = projected.projectionState;
     // Recovery can remove this row from history, which an append-only delta cannot express.
     // Keep the last accepted cursor before the error and let a full tail own reconciliation.

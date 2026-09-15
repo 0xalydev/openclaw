@@ -30,11 +30,11 @@ import {
 } from "./argv.js";
 import {
   isReservedNonPluginCommandRoot,
-  shouldRegisterPrimaryCommandOnly,
   shouldSkipPluginCommandRegistration,
 } from "./command-registration-policy.js";
 import { resolveCliStartupPolicy as resolveCliStartupPolicyForArgv } from "./command-startup-policy.js";
 import { maybeRunCliInContainer, parseCliContainerArgs } from "./container-target.js";
+import { tryRunGatewayServiceUpdateCapabilityProbe } from "./daemon-cli/update-capability.js";
 import { shouldStartLocalOnboarding } from "./fresh-install-config.js";
 import {
   consumeGatewayFastPathRootOptionToken,
@@ -1123,6 +1123,10 @@ async function runCliWithPreparedOutputMode(
     options.runtimeRecoveryEnv,
   );
 
+  if (await tryRunGatewayServiceUpdateCapabilityProbe(normalizedArgv)) {
+    return;
+  }
+
   if (
     !isHelpOrVersionInvocation &&
     !isDatabaseInvocation &&
@@ -1203,7 +1207,7 @@ async function runCliWithPreparedOutputMode(
     env: process.env,
   });
   const useSourceOnlyBestEffortConfig =
-    !isCurrentRuntimeSupported() ||
+    !(await isCurrentRuntimeSupported()) ||
     normalizedInvocation.primary === "update" ||
     (normalizedInvocation.primary === "doctor" && hasFlag(normalizedArgv, "--lint"));
   const readBestEffortCliConfig = async (): Promise<OpenClawConfig> => {
@@ -1216,7 +1220,7 @@ async function runCliWithPreparedOutputMode(
           // Routing must not create state before Doctor decides whether migrations are needed.
           observe: false,
           ...(isolateProxyConfigEnv ? { isolateEnv: true } : {}),
-          ...(bestEffortConfigStartupPolicy.validateConfigOnly
+          ...(bestEffortConfigStartupPolicy.validateConfigOnly || isGatewayRunInvocation
             ? { pluginValidation: "core-only" }
             : { skipPluginValidation: true }),
         };
@@ -1629,7 +1633,7 @@ async function runCliWithPreparedOutputMode(
       // Register the primary command (builtin or subcli) so help and command parsing
       // are correct even with lazy command registration.
       const { primary } = invocation;
-      if (primary && shouldRegisterPrimaryCommandOnly(parseArgv)) {
+      if (primary) {
         await startupTrace.measure("register-primary", async () => {
           const { getProgramContext } = await import("./program/program-context.js");
           const ctx = getProgramContext(program);

@@ -15,6 +15,7 @@ import {
   resolveGatewaySupervisorLogPaths,
 } from "../../daemon/restart-logs.js";
 import { buildGatewayRuntimeRecoveryHints } from "../../daemon/runtime-hints.js";
+import { formatServiceInspectionReason } from "../../daemon/service-inspection-error.js";
 import { isSystemdStartLimitHit } from "../../daemon/service-runtime.js";
 import {
   isSystemdUnavailableDetail,
@@ -92,6 +93,12 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
   defaultRuntime.log(
     `${label("Service:")} ${accent(service.label)} (${serviceStatus})${diagnosticOnlySuffix}`,
   );
+  const transport = service.runtime?.systemd?.transport;
+  if (opts.deep && transport) {
+    defaultRuntime.log(
+      `${label("Systemd transport:")} ${infoText(`${transport.kind} (${transport.kind === "machine" ? transport.user : transport.address})`)}`,
+    );
+  }
   if (status.logFile) {
     defaultRuntime.log(`${label("File logs:")} ${infoText(shortenHomePath(status.logFile))}`);
   }
@@ -248,7 +255,9 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
     spacer();
   }
 
-  const runtimeLine = formatRuntimeStatus(service.runtime);
+  const runtimeLine = formatRuntimeStatus(
+    service.inspectionReason ? { ...service.runtime, detail: undefined } : service.runtime,
+  );
   if (runtimeLine) {
     const runtimeColor = resolveRuntimeStatusColor(service.runtime?.status);
     defaultRuntime.log(
@@ -257,6 +266,15 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
   }
   if (service.restartHandoff) {
     defaultRuntime.log(infoText(formatGatewayRestartHandoffDiagnostic(service.restartHandoff)));
+  }
+  if (status.gateway?.lastShutdown) {
+    const { reason, completedAtMs } = status.gateway.lastShutdown;
+    defaultRuntime.log(
+      `${label("Last shutdown:")} ${infoText(sanitizeTerminalText(reason ?? "unknown"))} at ${new Date(completedAtMs).toISOString()}`,
+    );
+  }
+  if (status.gateway?.duelingScopesWarning) {
+    defaultRuntime.error(warnText(sanitizeTerminalText(status.gateway.duelingScopesWarning)));
   }
 
   if (
@@ -357,8 +375,11 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
     spacer();
   }
 
-  const serviceInspectionDetail =
-    service.loadState.status === "unknown" ? service.loadState.detail : undefined;
+  const serviceInspectionDetail = service.inspectionReason
+    ? formatServiceInspectionReason(service.inspectionReason)
+    : service.loadState.status === "unknown"
+      ? service.loadState.detail
+      : undefined;
   if (serviceInspectionDetail) {
     defaultRuntime.error(errorText(`Service inspection failed: ${serviceInspectionDetail}`));
     defaultRuntime.error(errorText(`Retry: ${formatCliCommand("openclaw gateway status --deep")}`));
@@ -370,6 +391,7 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
     service.runtime?.detail;
   const systemdUnavailable =
     process.platform === "linux" &&
+    !service.inspectionReason &&
     (serviceInspectionDetail !== undefined || rpc?.ok !== true) &&
     isSystemdUnavailableDetail(systemdUnavailableDetail);
   if (systemdUnavailable) {

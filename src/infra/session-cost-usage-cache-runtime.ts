@@ -73,7 +73,7 @@ export async function loadCostUsageSummary(params: {
     agentDir,
     databasePath,
   });
-  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config, agentDir);
+  const pricingFingerprint = await resolveUsageCostPricingFingerprint(params.config, agentDir);
   const rollups = readUsageCostRollups(params.agentId, pricingFingerprint, databasePath);
   const files = await listUsageCountedTranscriptStats(params.agentId);
   return buildCostUsageSummaryFromRollups({
@@ -85,7 +85,7 @@ export async function loadCostUsageSummary(params: {
     refreshing:
       result === "busy" ||
       isUsageCostRefreshQueued(databasePath) ||
-      isSessionCostUsageRefreshRunning(params.agentId, databasePath),
+      (await isSessionCostUsageRefreshRunning(params.agentId, databasePath)),
   });
 }
 
@@ -100,7 +100,7 @@ export async function loadCostUsageSummaryFromCache(params: {
 }): Promise<CostUsageSummary> {
   const agentDir = resolveUsageCostAgentDir(params.config, params.agentId);
   const databasePath = resolveUsageCostCacheDatabasePath(params.agentId);
-  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config, agentDir);
+  const pricingFingerprint = await resolveUsageCostPricingFingerprint(params.config, agentDir);
   let rollups = readUsageCostRollups(params.agentId, pricingFingerprint, databasePath);
   let files = await listUsageCountedTranscriptStats(params.agentId);
   const staleFiles = getUsageCostStaleRollupFiles({ rollups, files });
@@ -130,7 +130,7 @@ export async function loadCostUsageSummaryFromCache(params: {
     dayBucket: params.dayBucket,
     refreshing:
       isUsageCostRefreshQueued(databasePath) ||
-      isSessionCostUsageRefreshRunning(params.agentId, databasePath),
+      (await isSessionCostUsageRefreshRunning(params.agentId, databasePath)),
   });
 }
 
@@ -146,7 +146,7 @@ export async function loadSessionCostSummariesFromCache(params: {
 }): Promise<{ summaries: Array<SessionCostSummary | null>; cacheStatus: UsageCacheStatus }> {
   const agentDir = resolveUsageCostAgentDir(params.config, params.agentId);
   const databasePath = resolveUsageCostCacheDatabasePath(params.agentId);
-  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config, agentDir);
+  const pricingFingerprint = await resolveUsageCostPricingFingerprint(params.config, agentDir);
   const fileTasks = params.sessions.map(
     (session) => async () => await resolveUsageCostTranscriptFile(session.sessionFile),
   );
@@ -189,7 +189,7 @@ export async function loadSessionCostSummariesFromCache(params: {
       sessionFiles: [...staleFiles],
     });
   }
-  const refreshRunning = isSessionCostUsageRefreshRunning(params.agentId, databasePath);
+  const refreshRunning = await isSessionCostUsageRefreshRunning(params.agentId, databasePath);
   return {
     summaries,
     cacheStatus: {

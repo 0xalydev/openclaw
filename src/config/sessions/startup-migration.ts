@@ -1,7 +1,14 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { formatCliCommand } from "../../cli/command-format.js";
+import { readDeferredPluginMigrations } from "../../infra/deferred-plugin-migrations.js";
+import {
+  deferredPluginSessionStoreIds,
+  readDeferredPluginSessionImport,
+} from "../../infra/deferred-plugin-session-sources.js";
 import { formatDoctorStateRepairFailure } from "../../infra/state-repair-message.js";
+import { readAgentDatabaseAdmissionRefusal } from "../../state/agent-database-admission.js";
 import { readAgentDeletionJournal } from "../../state/agent-deletion-journal.js";
 import { listOpenClawRegisteredAgentDatabases } from "../../state/openclaw-agent-db-registry.js";
 import {
@@ -14,13 +21,20 @@ import {
 import { resolveStateDir } from "../paths.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
 import { migrateLegacyMainSessionKeys } from "./legacy-main-session-migration.js";
+import {
+  isLegacySessionRecordOwnedByTarget,
+  listLegacySessionTranscriptFiles,
+  readLegacySessionStoreEntries,
+  shouldFilterLegacySessionRecordsByTarget,
+} from "./legacy-store-inspection.js";
 import { SessionStoreMigrationRequiredError } from "./migration-required.js";
 import { resolveSqliteReadScope, toDatabaseOptions } from "./session-accessor.sqlite-scope.js";
 import {
   isCanonicalSqliteSessionMainKeyCurrent,
   setCanonicalSqliteSessionMainKey,
 } from "./session-canonical-key.js";
-import { resolveAllAgentSessionStoreTargetsSync } from "./targets.js";
+import { resolveSqliteTargetFromSessionStorePath } from "./session-sqlite-target.js";
+import { resolveAllAgentSessionStoreTargetsSync, resolveSessionStoreTargets } from "./targets.js";
 import { migrateManagedWorktreeCanonicalWorkspaces } from "./worktree-workspace-migration.js";
 
 export type SessionStartupMigrationLogger = Record<"info" | "warn", (message: string) => void>;
@@ -28,15 +42,108 @@ export type SessionStartupMigrationLogger = Record<"info" | "warn", (message: st
 export function assertSessionStoreMigrationComplete(params: {
   cfg: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
-  targets?: readonly { storePath: string }[];
+  targets?: readonly { agentId?: string; storePath: string }[];
   operation?: "doctor";
 }): void {
   const env = params.env ?? process.env;
-  const targets = params.targets ?? resolveAllAgentSessionStoreTargetsSync(params.cfg, { env });
-  const legacyStore = [
-    path.join(resolveStateDir(env), "sessions", "sessions.json"),
-    ...targets.map((target) => target.storePath),
-  ].find((storePath) => !storePath.endsWith(".sqlite") && fs.existsSync(storePath));
+  const targets = (
+    params.targets ?? resolveAllAgentSessionStoreTargetsSync(params.cfg, { env })
+  ).filter(
+    (target) => !target.agentId || !readAgentDatabaseAdmissionRefusal(target.agentId, { env }),
+  );
+  const pending = readDeferredPluginMigrations({ env });
+  const legacyRootStore = path.join(resolveStateDir(env), "sessions", "sessions.json");
+  const legacyTargets = fs.existsSync(legacyRootStore)
+    ? resolveSessionStoreTargets(params.cfg, { allAgents: true }, { env }).map((target) => ({
+        agentId: target.agentId,
+        sqlitePath: resolveSqliteTargetFromSessionStorePath(target.storePath, {
+          agentId: target.agentId,
+          env,
+        }).path,
+        storePath: legacyRootStore,
+      }))
+    : [];
+  const sources: readonly { agentId?: string; storePath: string; sqlitePath?: string }[] = [
+    ...(legacyTargets.length > 0 ? legacyTargets : [{ storePath: legacyRootStore }]),
+    ...targets,
+  ];
+  const sourcesByPath = new Map<string, Array<(typeof sources)[number]>>();
+  for (const target of sources) {
+    const sourcePath = path.resolve(target.storePath);
+    sourcesByPath.set(sourcePath, [...(sourcesByPath.get(sourcePath) ?? []), target]);
+  }
+  const legacyStore = [...sourcesByPath].find(([storePath, candidates]) => {
+    if (storePath.endsWith(".sqlite") || !fs.existsSync(storePath)) {
+      return false;
+    }
+    type SourceOwner = {
+      target: { agentId: string; storePath: string; sqlitePath?: string };
+      destination: string;
+    };
+    const owners = new Map<string, SourceOwner>();
+    for (const target of candidates) {
+      if (
+        !target.agentId ||
+        deferredPluginSessionStoreIds({ target: { ...target, agentId: target.agentId }, pending })
+          .length === 0
+      ) {
+        return true;
+      }
+      const destination =
+        target.sqlitePath ??
+        resolveSqliteTargetFromSessionStorePath(target.storePath, { agentId: target.agentId, env })
+          .path;
+      owners.set(`${target.agentId}\0${destination}`, {
+        target: { ...target, agentId: target.agentId },
+        destination,
+      });
+    }
+    // A roster entry is only a possible importer. Inspect retained source ownership
+    // here, never in runtime session access, and bind parsed bytes to every receipt.
+    const issues: Array<{ code: string; message: string }> = [];
+    const source = readLegacySessionStoreEntries({ storePath }, issues);
+    if (issues.length > 0 || !source.bytes) {
+      return true;
+    }
+    const sourceSha256 = createHash("sha256").update(source.bytes).digest("hex");
+    // Empty indexes may have unindexed history: retain the existing requirement
+    // for every named owner's verified receipt rather than infer ownership here.
+    const required = new Set<SourceOwner>(source.entries.length === 0 ? owners.values() : []);
+    for (const { sessionKey } of source.entries) {
+      const matches = [...owners.values()].filter(
+        ({ target }) =>
+          !shouldFilterLegacySessionRecordsByTarget(target) ||
+          isLegacySessionRecordOwnedByTarget(params.cfg, target, sessionKey),
+      );
+      if (matches.length !== 1) {
+        return true;
+      }
+      required.add(matches[0]!);
+    }
+    let hasUnindexedHistory: boolean | undefined;
+    return [...required].some(({ target, destination }) => {
+      const receipt = readDeferredPluginSessionImport({
+        target: { ...target, sqlitePath: destination },
+        env,
+      });
+      // Owners without a database can never hold a replayable receipt (receipts bind
+      // the database identity, which a later-created database would invalidate).
+      // Without a receipt or unindexed history, demanding one deadlocks startup:
+      // Doctor refuses to create a database just for the receipt.
+      if (!receipt && source.entries.length === 0 && !fs.existsSync(destination)) {
+        hasUnindexedHistory ??=
+          listLegacySessionTranscriptFiles(path.dirname(storePath)).length > 0;
+        if (!hasUnindexedHistory) {
+          return false;
+        }
+      }
+      return (
+        !receipt ||
+        receipt.sources.find((entry) => path.resolve(entry.path) === storePath)?.identity.sha256 !==
+          sourceSha256
+      );
+    });
+  })?.[0];
   if (legacyStore) {
     throw new SessionStoreMigrationRequiredError(
       params.operation === "doctor"
@@ -64,7 +171,11 @@ export async function runSessionStartupMigration(params: {
   const env = params.env ?? process.env;
   const resolveTargets =
     params.deps?.resolveAllAgentSessionStoreTargetsSync ?? resolveAllAgentSessionStoreTargetsSync;
-  let targets = resolveTargets(params.cfg, { env });
+  const admittedTargets = () =>
+    resolveTargets(params.cfg, { env }).filter(
+      (target) => !readAgentDatabaseAdmissionRefusal(target.agentId, { env }),
+    );
+  let targets = admittedTargets();
   // Stable installations may still have file-backed history. Only Doctor imports it;
   // do not serve an empty SQLite history or rewrite those files during startup.
   assertSessionStoreMigrationComplete({ cfg: params.cfg, env, targets });
@@ -83,7 +194,7 @@ export async function runSessionStartupMigration(params: {
   }
   if (result.armed) {
     // A partial move can create the destination before source cleanup succeeds.
-    targets = resolveTargets(params.cfg, { env });
+    targets = admittedTargets();
   }
 
   const databases = new Set<string>();
