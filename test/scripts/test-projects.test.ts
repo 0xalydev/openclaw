@@ -2322,15 +2322,19 @@ describe("scripts/test-projects changed-target routing", () => {
     },
   );
 
-  it.each(["src/plugin-sdk/memory-host-events.ts", "src/plugin-sdk/persistent-dedupe.ts"])(
-    "preserves database consumer coverage for source target %s",
-    (sourceFile) => {
-      expectSingleVitestRunPlan(buildVitestRunPlans([sourceFile]), {
-        config: "test/vitest/vitest.infra.config.ts",
-        includePatterns: ["src/plugin-sdk/memory-host-events.test.ts"],
-      });
-    },
-  );
+  it.each([
+    ["src/plugin-sdk/memory-host-events.ts", "src/plugin-sdk/memory-host-events.test.ts"],
+    ["src/plugin-sdk/persistent-dedupe.ts", "src/plugin-sdk/memory-host-events.test.ts"],
+    [
+      "src/wizard/setup.inference-recovery.integration.test.ts",
+      "src/wizard/setup.inference-recovery.integration.test.ts",
+    ],
+  ])("preserves database consumer coverage for source target %s", (sourceFile, testFile) => {
+    expectSingleVitestRunPlan(buildVitestRunPlans([sourceFile]), {
+      config: "test/vitest/vitest.infra.config.ts",
+      includePatterns: [testFile],
+    });
+  });
 
   it.each([
     ["src/agents/**/*.test.ts", "test/vitest/vitest.agents.config.ts"],
@@ -3231,6 +3235,7 @@ describe("scripts/test-projects changed-target routing", () => {
         config: "test/vitest/vitest.commands.config.ts",
         includePatterns: [
           "src/commands/onboard-non-interactive.gateway-auth-token.test.ts",
+          "src/commands/onboard-non-interactive.gateway-health-auth.test.ts",
           "src/commands/onboard-non-interactive.gateway.test.ts",
         ],
       },
